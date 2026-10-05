@@ -56,10 +56,7 @@ export function useSplits() {
 
   const saveSplit = useCallback(
     async (expenseName: string, personName: string, amount: number) => {
-      if (isSheetsConfigured()) {
-        await saveSplitToSheet(expenseName, personName, amount);
-      }
-
+      // Update device first so Save never hangs on a slow Sheets round-trip
       setSplits((prev) => {
         const updated = nextSplits(prev, expenseName, personName, amount);
         const cached = getCachedBootstrap();
@@ -74,9 +71,14 @@ export function useSplits() {
         return updated;
       });
 
-      if (isSheetsConfigured()) {
-        invalidateBootstrapCache();
+      if (!isSheetsConfigured()) return;
+
+      try {
+        await saveSplitToSheet(expenseName, personName, amount);
+      } catch {
+        // Local value is already saved; sheet beacon/retry is handled in sheets.ts
       }
+      invalidateBootstrapCache();
     },
     []
   );

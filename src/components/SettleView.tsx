@@ -8,6 +8,9 @@ import {
   findSplitAmount,
   getSplitsForExpense,
   netBalanceWithPerson,
+  buildSettleYouOweWrites,
+  buildSettleCollectedWrites,
+  type SplitWrite,
 } from "../utils/calculations";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Field";
@@ -290,9 +293,13 @@ export function SettleView({
             <DuesPanel
               dues={dues}
               balances={balances}
+              expenses={expenses}
+              friends={friends}
+              splits={splits}
               currentUser={currentUser}
               copied={copied}
               onCopy={copyPhone}
+              onSaveSplit={onSaveSplit}
             />
         ) : null}
 
@@ -319,17 +326,143 @@ function EmptyState() {
 function DuesPanel({
   dues,
   balances,
+  expenses,
+  friends,
+  splits,
   currentUser,
   copied,
   onCopy,
+  onSaveSplit,
 }: {
   dues: PersonDues | null;
   balances: PersonBalance[];
+  expenses: Expense[];
+  friends: Friend[];
+  splits: ExpenseSplit[];
   currentUser: string;
   copied: string | null;
   onCopy: (phone: string, id: string) => void;
+  onSaveSplit: (expenseName: string, personName: string, amount: number) => Promise<void>;
 }) {
+  const { alert, confirm } = useAlert();
+  const [settlingKey, setSettlingKey] = useState<string | null>(null);
+
   if (!dues) return null;
+
+  const applyWrites = async (writes: SplitWrite[]) => {
+    for (const write of writes) {
+      await onSaveSplit(write.expenseName, write.personName, write.amount);
+    }
+  };
+
+  const settleYouOwe = async (paidToName?: string) => {
+    const key = paidToName ? `pay-${paidToName}` : "pay-all";
+    if (settlingKey) return;
+
+    const writes = buildSettleYouOweWrites(
+      expenses,
+      friends,
+      splits,
+      currentUser,
+      paidToName
+    );
+    if (writes.length === 0) {
+      await alert({
+        title: "Nothing to settle",
+        message: paidToName
+          ? `You’re already clear with ${paidToName} on open tabs.`
+          : "You’re already clear on open tabs.",
+      });
+      return;
+    }
+
+    const amountLabel = paidToName
+      ? dues.payees.find((p) => p.name === paidToName)?.amount
+      : dues.totalOwes;
+    const ok = await confirm({
+      title: paidToName ? `Settle with ${paidToName}?` : "Settle all you owe?",
+      message: paidToName
+        ? `Mark ${formatCurrency(amountLabel ?? 0)} as paid to ${paidToName} across all open tabs. Pay buttons on Tabs will clear.`
+        : `Mark ${formatCurrency(amountLabel ?? 0)} as paid across all open tabs. Pay buttons on Tabs will update to View split.`,
+      confirmLabel: "Settle now",
+      cancelLabel: "Not yet",
+    });
+    if (!ok) return;
+
+    setSettlingKey(key);
+    try {
+      await applyWrites(writes);
+      if (paidToName) {
+        const phone = dues.payees.find((p) => p.name === paidToName)?.phone;
+        if (phone) {
+          try {
+            await navigator.clipboard.writeText(phone.replace(/\s/g, ""));
+          } catch {
+            // clipboard optional
+          }
+        }
+      }
+      await alert({
+        title: "Settled",
+        message: paidToName
+          ? `You’re clear with ${paidToName}. Tabs Pay buttons are updated.`
+          : "All your open dues are cleared. Tabs Pay buttons are updated.",
+      });
+    } catch (err) {
+      await alert({
+        title: "Couldn’t settle",
+        message: err instanceof Error ? err.message : "Try again in a moment.",
+      });
+    } finally {
+      setSettlingKey(null);
+    }
+  };
+
+  const settleCollected = async (debtorName: string) => {
+    const key = `get-${debtorName}`;
+    if (settlingKey) return;
+
+    const writes = buildSettleCollectedWrites(
+      expenses,
+      friends,
+      splits,
+      currentUser,
+      debtorName
+    );
+    if (writes.length === 0) {
+      await alert({
+        title: "Nothing to clear",
+        message: `${debtorName} is already clear on your tabs.`,
+      });
+      return;
+    }
+
+    const amount =
+      dues.owedBy.find((p) => p.name === debtorName)?.amount ?? 0;
+    const ok = await confirm({
+      title: `Mark ${debtorName} paid?`,
+      message: `Clear ${formatCurrency(amount)} that ${debtorName} owes you across your tabs.`,
+      confirmLabel: "Mark paid",
+      cancelLabel: "Not yet",
+    });
+    if (!ok) return;
+
+    setSettlingKey(key);
+    try {
+      await applyWrites(writes);
+      await alert({
+        title: "Marked paid",
+        message: `${debtorName} is clear on your open tabs.`,
+      });
+    } catch (err) {
+      await alert({
+        title: "Couldn’t update",
+        message: err instanceof Error ? err.message : "Try again in a moment.",
+      });
+    } finally {
+      setSettlingKey(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -350,15 +483,18 @@ function DuesPanel({
         </div>
       </div>
 
-      {dues.payees[0] ? (
-        <SwipeSend
-          label={`Pay ${dues.payees[0].name}`}
-          onComplete={() => {
-            if (dues.payees[0]?.phone) {
-              void navigator.clipboard.writeText(dues.payees[0].phone.replace(/\s/g, ""));
-            }
-          }}
-        />
+      {dues.totalOwes > 0 ? (
+        <div className="space-y-2">
+          <SwipeSend
+            label={`Settle all · ${formatCurrency(dues.totalOwes)}`}
+            doneLabel="All settled"
+            disabled={Boolean(settlingKey)}
+            onComplete={() => settleYouOwe()}
+          />
+          <p className="text-center text-[11px] text-muted">
+            Clears every open Pay amount on Tabs in one go
+          </p>
+        </div>
       ) : null}
 
       {dues.payees.map((p) => (
@@ -369,7 +505,10 @@ function DuesPanel({
           amount={p.amount}
           tone="owe"
           copied={copied === `pay-${p.name}`}
+          settling={settlingKey === `pay-${p.name}`}
+          settleLabel="Settle"
           onCopy={() => onCopy(p.phone, `pay-${p.name}`)}
+          onSettle={() => settleYouOwe(p.name)}
         />
       ))}
 
@@ -381,7 +520,10 @@ function DuesPanel({
           amount={p.amount}
           tone="collect"
           copied={copied === `get-${p.name}`}
+          settling={settlingKey === `get-${p.name}`}
+          settleLabel="Got it"
           onCopy={() => onCopy(p.phone, `get-${p.name}`)}
+          onSettle={() => settleCollected(p.name)}
         />
       ))}
 
@@ -395,7 +537,7 @@ function DuesPanel({
 
       <section className="space-y-2 pt-2">
         <h3 className="font-display text-base font-bold text-pearl">Crew snapshot</h3>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto">
+        <div className="no-scrollbar flex touch-pan-x gap-2 overflow-x-auto">
           {balances.map((b) => (
             <div
               key={b.name}
@@ -431,51 +573,69 @@ function SettlementRow({
   amount,
   tone,
   copied,
+  settling,
+  settleLabel,
   onCopy,
+  onSettle,
 }: {
   name: string;
   phone: string;
   amount: number;
   tone: "owe" | "collect";
   copied: boolean;
+  settling: boolean;
+  settleLabel: string;
   onCopy: () => void;
+  onSettle: () => void;
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-[1.4rem] border px-3 py-3 ${
+      className={`rounded-[1.4rem] border px-3 py-3 ${
         tone === "owe" ? "border-rose/20 bg-rose/8" : "border-mint/20 bg-mint/8"
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-pearl">
-          {tone === "owe" ? `Pay ${name}` : `${name} owes you`}
-        </p>
-        <p className="truncate text-xs text-muted">{phone || "No phone on file"}</p>
-      </div>
-      <span
-        className={`font-display text-sm font-bold ${
-          tone === "owe" ? "text-rose" : "text-mint"
-        }`}
-      >
-        {formatCurrency(amount)}
-      </span>
-      {phone ? (
-        <div className="flex gap-1">
-          <a
-            href={`tel:${phone.replace(/\s/g, "")}`}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 text-muted hover:text-pearl"
-          >
-            <Phone size={15} />
-          </a>
-          <button
-            type="button"
-            onClick={onCopy}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 text-muted hover:text-pearl"
-          >
-            {copied ? <Check size={15} className="text-mint" /> : <Copy size={15} />}
-          </button>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-pearl">
+            {tone === "owe" ? `Pay ${name}` : `${name} owes you`}
+          </p>
+          <p className="truncate text-xs text-muted">{phone || "No phone on file"}</p>
         </div>
-      ) : null}
+        <span
+          className={`shrink-0 font-display text-sm font-bold ${
+            tone === "owe" ? "text-rose" : "text-mint"
+          }`}
+        >
+          {formatCurrency(amount)}
+        </span>
+        {phone ? (
+          <div className="flex shrink-0 gap-1">
+            <a
+              href={`tel:${phone.replace(/\s/g, "")}`}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 text-muted hover:text-pearl"
+            >
+              <Phone size={15} />
+            </a>
+            <button
+              type="button"
+              onClick={onCopy}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 text-muted hover:text-pearl"
+            >
+              {copied ? <Check size={15} className="text-mint" /> : <Copy size={15} />}
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <Button
+        size="sm"
+        variant={tone === "owe" ? "primary" : "mint"}
+        className="mt-2.5 w-full"
+        loading={settling}
+        disabled={settling}
+        onClick={onSettle}
+      >
+        {settleLabel} {formatCurrency(amount)}
+      </Button>
     </div>
   );
 }

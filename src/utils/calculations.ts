@@ -206,6 +206,113 @@ export function getSplitsForExpense(splits: ExpenseSplit[], expenseName: string)
   return splits.filter((s) => normalizeKey(s.expenseName) === expenseKey);
 }
 
+export interface SplitWrite {
+  expenseName: string;
+  personName: string;
+  amount: number;
+}
+
+/**
+ * Builds the split writes needed so `currentUser` no longer owes on open tabs.
+ * Optionally limit to tabs paid by `paidToName`.
+ */
+export function buildSettleYouOweWrites(
+  expenses: Expense[],
+  friends: Friend[],
+  splits: ExpenseSplit[],
+  currentUser: string,
+  paidToName?: string
+): SplitWrite[] {
+  const writes: SplitWrite[] = [];
+  const seen = new Set<string>();
+  const push = (w: SplitWrite) => {
+    const key = `${normalizeKey(w.expenseName)}|${normalizeKey(w.personName)}|${w.amount}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    writes.push(w);
+  };
+
+  for (const expense of expenses) {
+    if (
+      paidToName &&
+      normalizeKey(expense.paidBy) !== normalizeKey(paidToName)
+    ) {
+      continue;
+    }
+
+    const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+    const youRow = breakdown.find(
+      (r) => normalizeKey(r.name) === normalizeKey(currentUser)
+    );
+    if (!youRow || youRow.owes <= 0) continue;
+
+    const existing = getSplitsForExpense(splits, expense.name);
+    if (
+      existing.length === 0 &&
+      normalizeKey(expense.paidBy) !== normalizeKey(currentUser)
+    ) {
+      push({
+        expenseName: expense.name,
+        personName: expense.paidBy,
+        amount: expense.amount,
+      });
+    }
+    push({
+      expenseName: expense.name,
+      personName: currentUser,
+      amount: youRow.share,
+    });
+  }
+
+  return writes;
+}
+
+/**
+ * Builds writes so a debtor's open shares on tabs you paid are marked paid.
+ */
+export function buildSettleCollectedWrites(
+  expenses: Expense[],
+  friends: Friend[],
+  splits: ExpenseSplit[],
+  currentUser: string,
+  debtorName: string
+): SplitWrite[] {
+  const writes: SplitWrite[] = [];
+  const seen = new Set<string>();
+  const push = (w: SplitWrite) => {
+    const key = `${normalizeKey(w.expenseName)}|${normalizeKey(w.personName)}|${w.amount}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    writes.push(w);
+  };
+
+  for (const expense of expenses) {
+    if (normalizeKey(expense.paidBy) !== normalizeKey(currentUser)) continue;
+
+    const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+    const debtorRow = breakdown.find(
+      (r) => normalizeKey(r.name) === normalizeKey(debtorName)
+    );
+    if (!debtorRow || debtorRow.owes <= 0) continue;
+
+    const existing = getSplitsForExpense(splits, expense.name);
+    if (existing.length === 0) {
+      push({
+        expenseName: expense.name,
+        personName: currentUser,
+        amount: expense.amount,
+      });
+    }
+    push({
+      expenseName: expense.name,
+      personName: debtorName,
+      amount: debtorRow.share,
+    });
+  }
+
+  return writes;
+}
+
 export function mergeSubExpensesIntoExpenses(
   expenses: Expense[],
   subExpenses: SubExpense[]

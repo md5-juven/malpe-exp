@@ -113,6 +113,7 @@ type SheetAction = "expenses" | "friends" | "travellers" | "splits" | "subExpens
 
 const FETCH_TIMEOUT_MS = 14000;
 const MAX_RETRIES = 1;
+const MUTATE_TIMEOUT_MS = 18000;
 
 let lastBootstrapUsedCache = false;
 
@@ -202,6 +203,42 @@ async function getViaScript(params: Record<string, string>): Promise<Record<stri
   const data = await fetchJson(url);
   if (data.error) throw new Error(String(data.error));
   return data;
+}
+
+/** Fire-and-forget POST — works with older Apps Script deployments; no-cors avoids hanging the UI. */
+function postScriptBeacon(payload: Record<string, unknown>): void {
+  if (!SHEETS_CONFIG.scriptUrl) return;
+  try {
+    void fetch(SHEETS_CONFIG.scriptUrl, {
+      method: "POST",
+      mode: "no-cors",
+      keepalive: true,
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Write helper that never blocks the UI on cold Apps Script.
+ * Sends a POST beacon immediately, then optionally confirms via GET in the background.
+ */
+async function mutateViaScript(
+  params: Record<string, string>,
+  postBody: Record<string, unknown>
+): Promise<void> {
+  if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
+
+  // Immediate delivery path (works with existing doPost saveSplit / addExpense / addFriend)
+  postScriptBeacon(postBody);
+
+  // Background confirm via GET when the newer deployment supports it — do not await
+  const url = `${SHEETS_CONFIG.scriptUrl}?${new URLSearchParams(params)}`;
+  void fetchJsonOnce(url, MUTATE_TIMEOUT_MS).catch(() => {
+    // Ignore — beacon already sent
+  });
 }
 
 function verifyFromFriends(friends: Friend[], name: string, password: string): string {
@@ -404,14 +441,25 @@ export async function addExpense(
     throw new Error("Google Script URL not configured.");
   }
 
-  await getViaScript({
-    action: "addExpense",
-    name,
-    amount: String(amount),
-    paidBy,
-    date,
-    participants: formatParticipantsList(participants),
-  });
+  const participantsList = formatParticipantsList(participants);
+  await mutateViaScript(
+    {
+      action: "addExpense",
+      name,
+      amount: String(amount),
+      paidBy,
+      date,
+      participants: participantsList,
+    },
+    {
+      action: "addExpense",
+      name,
+      amount,
+      paidBy,
+      date,
+      participants: participantsList,
+    }
+  );
 }
 
 export async function updateExpense(
@@ -448,12 +496,15 @@ export async function saveSplit(
 ): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
 
-  await getViaScript({
-    action: "saveSplit",
-    expenseName,
-    personName,
-    amount: String(amount),
-  });
+  await mutateViaScript(
+    {
+      action: "saveSplit",
+      expenseName,
+      personName,
+      amount: String(amount),
+    },
+    { action: "saveSplit", expenseName, personName, amount }
+  );
 }
 
 export async function addSubExpense(
@@ -480,12 +531,10 @@ export async function deleteSubExpense(sheetRow: number): Promise<void> {
 export async function addFriend(name: string, phone: string, password = ""): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
 
-  await getViaScript({
-    action: "addFriend",
-    name,
-    phone,
-    password,
-  });
+  await mutateViaScript(
+    { action: "addFriend", name, phone, password },
+    { action: "addFriend", name, phone, password }
+  );
 }
 
 export async function verifyUserPassword(
