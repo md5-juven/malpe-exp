@@ -185,20 +185,17 @@ export function HomeView({
         </div>
 
         <div className="space-y-3">
-          {recent.map((expense, i) => {
+          {recent.map((expense) => {
             const visual = getExpenseVisual(expense.name);
             const Icon = visual.Icon;
             const people = getExpenseParticipants(expense, friends).length;
-            const isLast = i === recent.length - 1 && recent.length > 2;
 
             return (
               <button
                 key={expense.id}
                 type="button"
                 onClick={() => onOpenExpense(expense)}
-                className={`flex w-full items-center gap-3 rounded-[1.4rem] border border-border bg-surface/80 p-3 text-left shadow-[0_10px_30px_rgb(0_0_0/0.18)] transition hover:border-border-strong ${
-                  isLast ? "origin-bottom rotate-[-1.2deg]" : ""
-                }`}
+                className="flex w-full items-center gap-3 rounded-[1.4rem] border border-border bg-surface/80 p-3 text-left shadow-[0_10px_30px_rgb(0_0_0/0.18)] transition hover:border-border-strong"
               >
                 <span
                   className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${visual.gradient}`}
@@ -216,7 +213,7 @@ export function HomeView({
                     <span>{people}</span>
                   </p>
                 </div>
-                <span className="font-display text-base font-bold text-gold">
+                <span className="shrink-0 self-center font-display text-base font-bold text-gold">
                   {formatCurrency(expense.amount)}
                 </span>
               </button>
