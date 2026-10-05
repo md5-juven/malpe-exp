@@ -81,6 +81,12 @@ export function ExpensesView({
     if (filter === "mine") setPersonFilter("all");
   }, [filter]);
 
+  useEffect(() => {
+    if (personFilter.toLowerCase() === currentUser.toLowerCase()) {
+      setPersonFilter("all");
+    }
+  }, [personFilter, currentUser]);
+
   const friendNames = friends.map((f) => f.name);
 
   const payerOptions = useMemo(() => {
@@ -89,11 +95,9 @@ export function ExpensesView({
     for (const e of expenses) {
       if (e.paidBy.trim()) names.add(e.paidBy.trim());
     }
-    return Array.from(names).sort((a, b) => {
-      if (a.toLowerCase() === currentUser.toLowerCase()) return -1;
-      if (b.toLowerCase() === currentUser.toLowerCase()) return 1;
-      return a.localeCompare(b);
-    });
+    return Array.from(names)
+      .filter((name) => name.toLowerCase() !== currentUser.toLowerCase())
+      .sort((a, b) => a.localeCompare(b));
   }, [friends, expenses, currentUser]);
 
   const filtered = useMemo(() => {
@@ -112,114 +116,97 @@ export function ExpensesView({
     filter === "mine"
       ? "Your tabs"
       : personFilter !== "all"
-        ? personFilter.toLowerCase() === currentUser.toLowerCase()
-          ? "Paid by you"
-          : `Paid by ${personFilter}`
+        ? `Paid by ${personFilter}`
         : "All tabs";
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-muted">{headerLabel}</p>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-pearl">
-            {formatCurrency(total)}
-          </h2>
-        </div>
-        <Button size="icon" onClick={() => setShowAdd(true)} aria-label="Add expense">
-          <Plus size={22} />
-        </Button>
-      </div>
-
-      <div className="space-y-2.5">
-        <div className="flex gap-2 rounded-2xl border border-border bg-surface/50 p-1">
-          {(["all", "mine"] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={`relative flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
-                filter === f ? "text-ink" : "text-muted hover:text-pearl"
-              }`}
-            >
-              {filter === f ? (
-                <motion.span
-                  layoutId="expense-filter"
-                  className="absolute inset-0 rounded-xl bg-gold"
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
-              ) : null}
-              <span className="relative z-10">{f === "all" ? "Everyone" : "Mine"}</span>
-            </button>
-          ))}
+    <div>
+      <div className="sticky top-16 z-20 -mx-4 space-y-3 border-b border-border/50 bg-ink/95 px-4 pb-3 pt-1 backdrop-blur-xl">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">{headerLabel}</p>
+            <h2 className="font-display text-3xl font-extrabold tracking-tight text-pearl">
+              {formatCurrency(total)}
+            </h2>
+          </div>
+          <Button size="icon" onClick={() => setShowAdd(true)} aria-label="Add expense">
+            <Plus size={22} />
+          </Button>
         </div>
 
-        <AnimatePresence initial={false}>
-          {filter === "all" ? (
-            <motion.div
-              key="person-filter"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div
-                className="flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                role="listbox"
-                aria-label="Filter by who paid"
+        <div className="space-y-3">
+          <div className="flex gap-2 rounded-2xl border border-border bg-surface/50 p-1">
+            {(["all", "mine"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`relative flex-1 rounded-xl py-2.5 text-sm font-semibold transition ${
+                  filter === f ? "text-ink" : "text-muted hover:text-pearl"
+                }`}
               >
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={personFilter === "all"}
-                  onClick={() => setPersonFilter("all")}
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    personFilter === "all"
-                      ? "bg-pearl/12 text-pearl ring-1 ring-pearl/20"
-                      : "text-muted hover:bg-surface-2 hover:text-pearl"
-                  }`}
-                >
-                  All
-                </button>
-                {payerOptions.map((name) => {
-                  const active = personFilter.toLowerCase() === name.toLowerCase();
-                  const label =
-                    name.toLowerCase() === currentUser.toLowerCase() ? "You" : name;
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      role="option"
-                      aria-selected={active}
-                      onClick={() => setPersonFilter(name)}
-                      className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                        active
-                          ? "bg-gold/15 text-gold ring-1 ring-gold/35"
-                          : "text-muted hover:bg-surface-2 hover:text-pearl"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
+                {filter === f ? (
+                  <motion.span
+                    layoutId="expense-filter"
+                    className="absolute inset-0 rounded-xl bg-gold"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                ) : null}
+                <span className="relative z-10">{f === "all" ? "Everyone" : "Mine"}</span>
+              </button>
+            ))}
+          </div>
+
+          {filter === "all" ? (
+            <div
+              className="flex gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="listbox"
+              aria-label="Filter by who paid"
+            >
+              <button
+                type="button"
+                role="option"
+                aria-selected={personFilter === "all"}
+                onClick={() => setPersonFilter("all")}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  personFilter === "all"
+                    ? "bg-pearl/12 text-pearl ring-1 ring-inset ring-pearl/25"
+                    : "text-muted hover:bg-surface-2 hover:text-pearl"
+                }`}
+              >
+                All
+              </button>
+              {payerOptions.map((name) => {
+                const active = personFilter.toLowerCase() === name.toLowerCase();
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => setPersonFilter(name)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? "bg-gold/15 text-gold ring-1 ring-inset ring-gold/40"
+                        : "text-muted hover:bg-surface-2 hover:text-pearl"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
           ) : null}
-        </AnimatePresence>
+        </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="mt-4 space-y-3">
         {filtered.length === 0 ? (
           <p className="rounded-2xl border border-border/60 bg-surface/40 px-4 py-8 text-center text-sm text-muted">
             {filter === "mine"
               ? "No tabs you’ve paid for yet."
               : personFilter !== "all"
-                ? `No tabs paid by ${
-                    personFilter.toLowerCase() === currentUser.toLowerCase()
-                      ? "you"
-                      : personFilter
-                  }.`
+                ? `No tabs paid by ${personFilter}.`
                 : "No tabs yet."}
           </p>
         ) : null}
