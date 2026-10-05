@@ -1,6 +1,6 @@
 import { SHEETS_CONFIG } from "../config";
 import type { Expense, Friend, ExpenseSplit, SubExpense } from "../types";
-import { parseParticipantsList, formatParticipantsList } from "../utils/calculations";
+import { parseParticipantsList, formatParticipantsList, normalizeExpenseDate } from "../utils/calculations";
 
 const DEMO_FRIENDS: Friend[] = [
   { id: "1", name: "Alex", phone: "+91 98765 43001", requiresPassword: true, password: "tab123" },
@@ -47,7 +47,7 @@ function parseExpenseRow(row: SheetRow, index: number): Expense | null {
     name,
     amount,
     paidBy: cellString(row[2]) || "Unknown",
-    date: cellString(row[3]) || undefined,
+    date: normalizeExpenseDate(cellString(row[3])) || undefined,
     participants: participants.length > 0 ? participants : undefined,
   };
 }
@@ -205,7 +205,8 @@ export async function addExpense(
   name: string,
   amount: number,
   paidBy: string,
-  participants: string[] = []
+  participants: string[] = [],
+  date: string = new Date().toISOString().split("T")[0]
 ): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) {
     throw new Error("Google Script URL not configured.");
@@ -220,7 +221,7 @@ export async function addExpense(
       name,
       amount,
       paidBy,
-      date: new Date().toISOString().split("T")[0],
+      date,
       participants: formatParticipantsList(participants),
     }),
   });
@@ -231,7 +232,8 @@ export async function updateExpense(
   name: string,
   amount: number,
   oldName?: string,
-  participants: string[] = []
+  participants: string[] = [],
+  date?: string
 ): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
 
@@ -243,6 +245,7 @@ export async function updateExpense(
     participants: formatParticipantsList(participants),
   };
   if (oldName) params.oldName = oldName;
+  if (date) params.date = date;
   await getViaScript(params);
 }
 

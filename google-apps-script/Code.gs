@@ -69,6 +69,9 @@ function doGet(e) {
 
     sheet.getRange(sheetRow, 1).setValue(newName);
     sheet.getRange(sheetRow, 2).setValue(Number(e.parameter.amount));
+    if (e.parameter.date) {
+      sheet.getRange(sheetRow, 4).setValue(String(e.parameter.date).trim());
+    }
     sheet.getRange(sheetRow, 5).setValue(String(e.parameter.participants || "").trim());
 
     if (oldName && oldName.toLowerCase() !== newName.toLowerCase()) {

@@ -4,13 +4,18 @@ import { Pencil, Plus, Trash2, ChevronDown, Users } from "lucide-react";
 import type { Expense, Friend, ExpenseSplit, SubExpense } from "../types";
 import {
   formatCurrency,
+  formatExpenseDate,
   getExpenseOwesBreakdown,
   getExpenseParticipants,
+  normalizeExpenseDate,
 } from "../utils/calculations";
 import { getExpenseVisual } from "../utils/expenseVisual";
 import { Button } from "./ui/Button";
 import { Field, Input, Select } from "./ui/Field";
+import { DateField, todayISO } from "./ui/DateField";
 import { Modal } from "./ui/Modal";
+import { useAlert } from "./ui/AlertProvider";
+import { canModifyExpense } from "../utils/auth";
 
 interface ExpensesViewProps {
   expenses: Expense[];
@@ -19,12 +24,19 @@ interface ExpensesViewProps {
   currentUser: string;
   openAdd?: boolean;
   onOpenAddConsumed?: () => void;
-  onAdd: (name: string, amount: number, paidBy: string, participants: string[]) => Promise<void>;
+  onAdd: (
+    name: string,
+    amount: number,
+    paidBy: string,
+    participants: string[],
+    date: string
+  ) => Promise<void>;
   onUpdate: (
     expense: Expense,
     name: string,
     amount: number,
-    participants: string[]
+    participants: string[],
+    date: string
   ) => Promise<void>;
   onDelete: (expense: Expense) => Promise<void>;
   onAddSub: (
@@ -34,7 +46,6 @@ interface ExpensesViewProps {
     participants: string[]
   ) => Promise<void>;
   onDeleteSub: (sub: SubExpense) => Promise<void>;
-  canDelete: boolean;
 }
 
 export function ExpensesView({
@@ -49,8 +60,8 @@ export function ExpensesView({
   onDelete,
   onAddSub,
   onDeleteSub,
-  canDelete,
 }: ExpensesViewProps) {
+  const { confirm } = useAlert();
   const [filter, setFilter] = useState<"all" | "mine">("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -120,6 +131,7 @@ export function ExpensesView({
             const visual = getExpenseVisual(expense.name);
             const Icon = visual.Icon;
             const people = getExpenseParticipants(expense, friends).length;
+            const isOwner = canModifyExpense(currentUser, expense);
 
             return (
               <motion.article
@@ -151,7 +163,7 @@ export function ExpensesView({
                       </span>
                     </div>
                     <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                      <span>{expense.date || "Recently"}</span>
+                      <span>{formatExpenseDate(expense.date)}</span>
                       <span>·</span>
                       <Users size={11} />
                       <span>{people}</span>
@@ -197,14 +209,26 @@ export function ExpensesView({
                                   <span className="text-sm font-medium text-gold">
                                     {formatCurrency(sub.amount)}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => void onDeleteSub(sub)}
-                                    className="rounded-lg p-1.5 text-muted hover:bg-rose/15 hover:text-rose"
-                                    aria-label="Delete line item"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  {isOwner ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const ok = await confirm({
+                                          title: "Delete line item?",
+                                          message: `"${sub.name}" will be removed from this tab.`,
+                                          confirmLabel: "Delete",
+                                          cancelLabel: "Keep",
+                                          tone: "danger",
+                                        });
+                                        if (!ok) return;
+                                        await onDeleteSub(sub);
+                                      }}
+                                      className="rounded-lg p-1.5 text-muted hover:bg-rose/15 hover:text-rose"
+                                      aria-label="Delete line item"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                             ))}
@@ -231,21 +255,29 @@ export function ExpensesView({
                         </div>
 
                         <div className="flex gap-2 pt-1">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => setEditing(expense)}
-                          >
-                            <Pencil size={14} />
-                            Edit
-                          </Button>
-                          <AddSubInline
-                            friends={friendNames}
-                            onAdd={(name, amount, participants) =>
-                              onAddSub(expense.name, name, amount, participants)
-                            }
-                          />
+                          {isOwner ? (
+                            <>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setEditing(expense)}
+                              >
+                                <Pencil size={14} />
+                                Edit
+                              </Button>
+                              <AddSubInline
+                                friends={friendNames}
+                                onAdd={(name, amount, participants) =>
+                                  onAddSub(expense.name, name, amount, participants)
+                                }
+                              />
+                            </>
+                          ) : (
+                            <p className="w-full rounded-xl bg-surface-2/80 px-3 py-2 text-center text-xs text-muted">
+                              Only {expense.paidBy} can edit this tab
+                            </p>
+                          )}
                         </div>
                       </div>
                     </motion.div>
@@ -270,13 +302,14 @@ export function ExpensesView({
         title="New tab"
         friends={friendNames}
         defaultPaidBy={currentUser}
-        onSubmit={async (name, amount, paidBy, participants) => {
-          await onAdd(name, amount, paidBy, participants);
+        lockPaidBy
+        onSubmit={async (name, amount, paidBy, participants, date) => {
+          await onAdd(name, amount, paidBy, participants, date);
           setShowAdd(false);
         }}
       />
 
-      {editing ? (
+      {editing && canModifyExpense(currentUser, editing) ? (
         <ExpenseFormModal
           key={editing.id}
           open
@@ -288,15 +321,16 @@ export function ExpensesView({
             amount: editing.hasSubExpenses ? undefined : editing.amount,
             paidBy: editing.paidBy,
             participants: editing.participants ?? friendNames,
+            date: normalizeExpenseDate(editing.date) || todayISO(),
           }}
           lockAmount={editing.hasSubExpenses}
-          canDelete={canDelete}
+          canDelete
           onDelete={async () => {
             await onDelete(editing);
             setEditing(null);
           }}
-          onSubmit={async (name, amount, _paidBy, participants) => {
-            await onUpdate(editing, name, amount, participants);
+          onSubmit={async (name, amount, _paidBy, participants, date) => {
+            await onUpdate(editing, name, amount, participants, date);
             setEditing(null);
           }}
         />
@@ -380,15 +414,19 @@ interface ExpenseFormModalProps {
     amount?: number;
     paidBy: string;
     participants: string[];
+    date?: string;
   };
   lockAmount?: boolean;
+  /** When true, expense is always attributed to defaultPaidBy (the signed-in user). */
+  lockPaidBy?: boolean;
   canDelete?: boolean;
   onDelete?: () => Promise<void>;
   onSubmit: (
     name: string,
     amount: number,
     paidBy: string,
-    participants: string[]
+    participants: string[],
+    date: string
   ) => Promise<void>;
 }
 
@@ -400,13 +438,20 @@ function ExpenseFormModal({
   defaultPaidBy,
   initial,
   lockAmount,
+  lockPaidBy,
   canDelete,
   onDelete,
   onSubmit,
 }: ExpenseFormModalProps) {
+  const { confirm } = useAlert();
   const [name, setName] = useState(initial?.name ?? "");
   const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
-  const [paidBy, setPaidBy] = useState(initial?.paidBy ?? defaultPaidBy ?? friends[0] ?? "");
+  const [date, setDate] = useState(initial?.date ?? todayISO());
+  const [paidBy, setPaidBy] = useState(
+    lockPaidBy
+      ? (defaultPaidBy ?? friends[0] ?? "")
+      : (initial?.paidBy ?? defaultPaidBy ?? friends[0] ?? "")
+  );
   const [participants, setParticipants] = useState<string[]>(
     initial?.participants ?? [...friends]
   );
@@ -419,6 +464,8 @@ function ExpenseFormModal({
     );
   };
 
+  const submitPaidBy = lockPaidBy ? (defaultPaidBy ?? paidBy) : paidBy;
+
   return (
     <Modal open={open} onClose={onClose} title={title} subtitle="Keep the crew in the loop">
       <form
@@ -430,8 +477,9 @@ function ExpenseFormModal({
           try {
             const value = lockAmount ? initial?.amount ?? 0 : Number(amount);
             if (!lockAmount && (!value || value <= 0)) throw new Error("Enter a valid amount");
+            if (!date) throw new Error("Pick a date");
             if (participants.length === 0) throw new Error("Pick at least one person");
-            await onSubmit(name.trim(), value, paidBy, participants);
+            await onSubmit(name.trim(), value, submitPaidBy, participants, date);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Something went wrong");
           } finally {
@@ -466,7 +514,9 @@ function ExpenseFormModal({
           </p>
         )}
 
-        {!initial ? (
+        <DateField value={date} onChange={setDate} />
+
+        {!initial && !lockPaidBy ? (
           <Field label="Paid by">
             <Select
               value={paidBy}
@@ -474,7 +524,14 @@ function ExpenseFormModal({
               options={friends.map((f) => ({ value: f, label: f }))}
             />
           </Field>
-        ) : null}
+        ) : (
+          <p className="rounded-xl bg-surface-2/80 px-3 py-2 text-sm text-muted">
+            Paid by{" "}
+            <span className="font-medium text-pearl">
+              {initial?.paidBy ?? submitPaidBy}
+            </span>
+          </p>
+        )}
 
         <Field label="Split between">
           <div className="flex flex-wrap gap-2">
@@ -512,7 +569,14 @@ function ExpenseFormModal({
             variant="danger"
             className="w-full"
             onClick={async () => {
-              if (!confirm("Delete this expense?")) return;
+              const ok = await confirm({
+                title: "Delete this expense?",
+                message: "This tab and its splits will be removed for everyone.",
+                confirmLabel: "Delete",
+                cancelLabel: "Keep",
+                tone: "danger",
+              });
+              if (!ok) return;
               setLoading(true);
               try {
                 await onDelete();

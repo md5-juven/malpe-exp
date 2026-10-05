@@ -138,29 +138,76 @@ export function SettleView({
                   currentUser={currentUser}
                 />
 
-                {dues && dues.payees[0] ? (
-                  <div className="space-y-2">
-                    <p className="text-center text-sm text-muted">
-                      Next up: pay <span className="text-pearl">{dues.payees[0].name}</span>{" "}
-                      {formatCurrency(dues.payees[0].amount)}
-                    </p>
-                    <SwipeSend
-                      label="Swipe & Send"
-                      onComplete={() => {
-                        if (dues.payees[0]?.phone) {
-                          void navigator.clipboard.writeText(
-                            dues.payees[0].phone.replace(/\s/g, "")
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-mint/25 bg-mint/8 px-4 py-5 text-center">
-                    <p className="font-display text-lg font-bold text-mint">Nothing to send</p>
-                    <p className="mt-1 text-sm text-muted">This tab looks settled for you.</p>
-                  </div>
-                )}
+                {(() => {
+                  const tabBreakdown = getExpenseOwesBreakdown(selected, friends, splits);
+                  const youRow = tabBreakdown.find(
+                    (r) => r.name.toLowerCase() === currentUser.toLowerCase()
+                  );
+                  const othersOwe = tabBreakdown
+                    .filter(
+                      (r) =>
+                        r.owes > 0 &&
+                        r.name.toLowerCase() !== currentUser.toLowerCase()
+                    )
+                    .reduce((s, r) => s + r.owes, 0);
+                  const youOwe = youRow?.owes ?? 0;
+                  const payThisTab = dues?.payees.find(
+                    (p) =>
+                      p.name.toLowerCase() === selected.paidBy.toLowerCase() && youOwe > 0
+                  );
+
+                  if (youOwe > 0 && (payThisTab || dues?.payees[0])) {
+                    const target = payThisTab ?? dues!.payees[0];
+                    return (
+                      <div className="space-y-2">
+                        <p className="text-center text-sm text-muted">
+                          You still owe{" "}
+                          <span className="text-pearl">{formatCurrency(youOwe)}</span> on this
+                          tab
+                          {target ? (
+                            <>
+                              {" "}
+                              · pay <span className="text-pearl">{target.name}</span>
+                            </>
+                          ) : null}
+                        </p>
+                        <SwipeSend
+                          label="Swipe & Send"
+                          onComplete={() => {
+                            if (target?.phone) {
+                              void navigator.clipboard.writeText(
+                                target.phone.replace(/\s/g, "")
+                              );
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (othersOwe > 0) {
+                    return (
+                      <div className="rounded-2xl border border-gold/25 bg-gold/8 px-4 py-5 text-center">
+                        <p className="font-display text-lg font-bold text-gold">
+                          You’re covered
+                        </p>
+                        <p className="mt-1 text-sm text-muted">
+                          Others still owe {formatCurrency(othersOwe)} on this tab. Nothing for
+                          you to send.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="rounded-2xl border border-mint/25 bg-mint/8 px-4 py-5 text-center">
+                      <p className="font-display text-lg font-bold text-mint">All settled</p>
+                      <p className="mt-1 text-sm text-muted">
+                        Everyone’s share on this tab is paid up.
+                      </p>
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <EmptyState />

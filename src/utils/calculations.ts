@@ -19,6 +19,53 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+/** Normalize sheet/ISO dates to YYYY-MM-DD for forms & storage. */
+export function normalizeExpenseDate(value: string | undefined | null): string {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    // Google Sheets sometimes returns "M/D/YYYY"
+    const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slash) {
+      const [, m, d, y] = slash;
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    return raw;
+  }
+
+  // Use UTC calendar day for pure ISO midnight timestamps from Sheets
+  if (/T/.test(raw) || /Z$/i.test(raw)) {
+    const y = parsed.getUTCFullYear();
+    const m = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Human-readable date for expense lists (e.g. "4 Oct 2026"). */
+export function formatExpenseDate(value: string | undefined | null): string {
+  const iso = normalizeExpenseDate(value);
+  if (!iso) return "Recently";
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }

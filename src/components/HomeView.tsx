@@ -1,7 +1,7 @@
 import { ArrowRight, Plus, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Expense, Friend, PersonDues } from "../types";
-import { formatCurrency, getExpenseParticipants } from "../utils/calculations";
+import { formatCurrency, formatExpenseDate, getExpenseParticipants } from "../utils/calculations";
 import { getExpenseVisual } from "../utils/expenseVisual";
 
 interface HomeViewProps {
@@ -189,7 +189,7 @@ export function HomeView({
                     {expense.name}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                    <span>{expense.date || "Recently"}</span>
+                    <span>{formatExpenseDate(expense.date)}</span>
                     <span className="text-border-strong">·</span>
                     <Users size={11} />
                     <span>{people}</span>

@@ -12,7 +12,7 @@ import {
 import { USER_STORAGE_KEY, AUTH_SESSION_KEY, isSheetsConfigured } from "./config";
 import { verifyUserPassword } from "./services/sheets";
 import {
-  canDeleteExpenses,
+  canModifyExpense,
   clearSession,
   createSession,
   resolveSessionUser,
@@ -26,8 +26,10 @@ import { HomeView } from "./components/HomeView";
 import { ExpensesView } from "./components/ExpensesView";
 import { SettleView } from "./components/SettleView";
 import { FriendsView } from "./components/FriendsView";
+import { useAlert } from "./components/ui/AlertProvider";
 
 export default function App() {
+  const { confirm } = useAlert();
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showAccount, setShowAccount] = useState(false);
@@ -126,7 +128,15 @@ export default function App() {
     setActiveTab("home");
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const ok = await confirm({
+      title: "Log out?",
+      message: "You’ll need to sign in again on this device.",
+      confirmLabel: "Log out",
+      cancelLabel: "Stay",
+      tone: "danger",
+    });
+    if (!ok) return;
     clearSession();
     setCurrentUser(null);
     setShowAccount(false);
@@ -137,7 +147,6 @@ export default function App() {
     return verifyUserPassword(name, password, friends);
   };
 
-  const userCanDelete = currentUser ? canDeleteExpenses(currentUser, friends) : false;
   const accountFriend = currentUser
     ? friends.find((f) => f.name === currentUser) ?? {
         id: "self",
@@ -150,17 +159,23 @@ export default function App() {
     expense: Expense,
     name: string,
     amount: number,
-    participants: string[]
+    participants: string[],
+    date: string
   ) => {
+    if (!canModifyExpense(currentUser, expense)) {
+      throw new Error("You can only edit expenses you added");
+    }
     const base = expenses.find((e) => e.id === expense.id) ?? expense;
     if (name !== base.name) {
       renameParent(base.name, name);
     }
-    await updateExpense(base, name, amount, participants);
+    await updateExpense(base, name, amount, participants, date);
   };
 
   const handleDeleteExpense = async (expense: Expense) => {
-    if (!userCanDelete) throw new Error("You don't have permission to delete");
+    if (!canModifyExpense(currentUser, expense)) {
+      throw new Error("You can only delete expenses you added");
+    }
 
     const base = expenses.find((e) => e.id === expense.id) ?? expense;
     await deleteExpense(base);
@@ -180,6 +195,10 @@ export default function App() {
     amount: number,
     participants: string[]
   ) => {
+    const parent = expenses.find((e) => e.name === parentName);
+    if (parent && !canModifyExpense(currentUser, parent)) {
+      throw new Error("You can only edit expenses you added");
+    }
     await addSubExpense(parentName, name, amount, participants);
     if (isSheetsConfigured()) {
       await reloadExpenses({ silent: true });
@@ -187,6 +206,10 @@ export default function App() {
   };
 
   const handleDeleteSubExpense = async (sub: SubExpense) => {
+    const parent = expenses.find((e) => e.name === sub.parentExpenseName);
+    if (parent && !canModifyExpense(currentUser, parent)) {
+      throw new Error("You can only edit expenses you added");
+    }
     await deleteSubExpense(sub);
     if (isSheetsConfigured()) {
       await reloadExpenses({ silent: true });
@@ -280,7 +303,6 @@ export default function App() {
             onDelete={handleDeleteExpense}
             onAddSub={handleAddSubExpense}
             onDeleteSub={handleDeleteSubExpense}
-            canDelete={userCanDelete}
           />
         ) : null}
 

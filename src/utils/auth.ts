@@ -104,8 +104,18 @@ export function isAuthenticated(name?: string | null): boolean {
   return key(session.sub) === key(name);
 }
 
+/** Only the person who entered/paid for an expense can edit or delete it. */
+export function canModifyExpense(
+  userName: string | null | undefined,
+  expense: { paidBy: string }
+): boolean {
+  if (!userName) return false;
+  if (!isAuthenticated(userName)) return false;
+  return key(userName) === key(expense.paidBy);
+}
+
+/** @deprecated Use canModifyExpense — deletes are per-expense, not global admin. */
 export function canDeleteExpenses(name: string, _friends?: Friend[]): boolean {
-  if (!isAdminUser(name)) return false;
   return isAuthenticated(name);
 }
 

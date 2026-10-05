@@ -33,7 +33,13 @@ export function useExpenses() {
   }, [load]);
 
   const addExpense = useCallback(
-    async (name: string, amount: number, paidBy: string, participants: string[] = []) => {
+    async (
+      name: string,
+      amount: number,
+      paidBy: string,
+      participants: string[] = [],
+      date: string = new Date().toISOString().split("T")[0]
+    ) => {
       if (!isSheetsConfigured()) {
         setExpenses((prev) => [
           ...prev,
@@ -44,35 +50,53 @@ export function useExpenses() {
             name,
             amount,
             paidBy,
-            date: new Date().toISOString().split("T")[0],
+            date,
             participants: participants.length > 0 ? participants : undefined,
           },
         ]);
         return;
       }
-      await addExpenseToSheet(name, amount, paidBy, participants);
+      await addExpenseToSheet(name, amount, paidBy, participants, date);
       await load();
     },
     [load]
   );
 
   const updateExpense = useCallback(
-    async (expense: Expense, name: string, amount: number, participants: string[] = []) => {
+    async (
+      expense: Expense,
+      name: string,
+      amount: number,
+      participants: string[] = [],
+      date?: string
+    ) => {
       const participantList = participants.length > 0 ? participants : undefined;
+      const nextDate = date ?? expense.date;
 
       if (!isSheetsConfigured()) {
         setExpenses((prev) =>
           prev.map((e) =>
-            e.id === expense.id ? { ...e, name, amount, participants: participantList } : e
+            e.id === expense.id
+              ? { ...e, name, amount, participants: participantList, date: nextDate }
+              : e
           )
         );
         return;
       }
 
-      await updateExpenseOnSheet(expense.sheetRow, name, amount, expense.name, participants);
+      await updateExpenseOnSheet(
+        expense.sheetRow,
+        name,
+        amount,
+        expense.name,
+        participants,
+        nextDate
+      );
       setExpenses((prev) =>
         prev.map((e) =>
-          e.id === expense.id ? { ...e, name, amount, participants: participantList } : e
+          e.id === expense.id
+            ? { ...e, name, amount, participants: participantList, date: nextDate }
+            : e
         )
       );
       await load({ silent: true });
