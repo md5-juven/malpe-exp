@@ -47,6 +47,19 @@ function doGet(e) {
     return jsonResponse({ rows: rows });
   }
 
+  if (action === "bootstrap") {
+    const friendsSheet = getFriendsSheet(ss);
+    const expensesSheet = ss.getSheetByName(EXPENSES_SHEET);
+    const splitsSheet = ss.getSheetByName(SPLITS_SHEET);
+    const subSheet = ss.getSheetByName(SUB_EXPENSES_SHEET);
+    return jsonResponse({
+      friends: friendsSheet ? serializeRows(friendsSheet.getDataRange().getValues()) : [],
+      expenses: expensesSheet ? serializeRows(expensesSheet.getDataRange().getValues()) : [],
+      splits: splitsSheet ? serializeRows(splitsSheet.getDataRange().getValues()) : [],
+      subExpenses: subSheet ? serializeRows(subSheet.getDataRange().getValues()) : [],
+    });
+  }
+
   if (action === "friends" || action === "travellers") {
     const sheet = getFriendsSheet(ss);
     const rows = sheet ? serializeRows(sheet.getDataRange().getValues()) : [];

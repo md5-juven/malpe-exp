@@ -1,35 +1,45 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Expense } from "../types";
 import {
   fetchExpenses,
   addExpense as addExpenseToSheet,
   updateExpense as updateExpenseOnSheet,
   deleteExpense as deleteExpenseOnSheet,
+  getCachedBootstrap,
+  invalidateBootstrapCache,
 } from "../services/sheets";
 import { isSheetsConfigured } from "../config";
 
 export function useExpenses() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
+  const hadCache = useRef(Boolean(getCachedBootstrap()));
+  const [expenses, setExpenses] = useState<Expense[]>(
+    () => getCachedBootstrap()?.expenses ?? []
+  );
+  const [loading, setLoading] = useState(!hadCache.current);
   const [error, setError] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const hasDataRef = useRef((getCachedBootstrap()?.expenses.length ?? 0) > 0);
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
-    if (!options?.silent) setLoading(true);
+  const load = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    if (!options?.silent && !hasDataRef.current) setLoading(true);
     setError(null);
     try {
+      if (options?.force) invalidateBootstrapCache();
       const data = await fetchExpenses();
       setExpenses(data);
+      hasDataRef.current = data.length > 0 || hasDataRef.current;
       setIsDemo(!isSheetsConfigured());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load expenses");
+      if (!hasDataRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to load expenses");
+      }
     } finally {
-      if (!options?.silent) setLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load({ silent: hadCache.current });
   }, [load]);
 
   const addExpense = useCallback(
@@ -57,7 +67,8 @@ export function useExpenses() {
         return;
       }
       await addExpenseToSheet(name, amount, paidBy, participants, date);
-      await load();
+      invalidateBootstrapCache();
+      await load({ silent: true, force: true });
     },
     [load]
   );
@@ -99,7 +110,8 @@ export function useExpenses() {
             : e
         )
       );
-      await load({ silent: true });
+      invalidateBootstrapCache();
+      await load({ silent: true, force: true });
     },
     [load]
   );
@@ -112,10 +124,20 @@ export function useExpenses() {
       }
       await deleteExpenseOnSheet(expense.sheetRow);
       setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
-      await load({ silent: true });
+      invalidateBootstrapCache();
+      await load({ silent: true, force: true });
     },
     [load]
   );
 
-  return { expenses, loading, error, isDemo, reload: load, addExpense, updateExpense, deleteExpense };
+  return {
+    expenses,
+    loading,
+    error,
+    isDemo,
+    reload: load,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+  };
 }

@@ -28,7 +28,7 @@ export function LoadingScreen({
         <div className="mt-6 w-full max-w-sm space-y-4 text-center">
           <p className="text-sm text-rose">{error}</p>
           <p className="text-xs text-muted">
-            Check your Google Sheet connection, then try again.
+            Hang tight, then try again. Your last saved tab stays on this device.
           </p>
           {onRetry ? (
             <Button className="w-full" onClick={onRetry}>

@@ -1,31 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SubExpense } from "../types";
 import {
   fetchSubExpenses,
   addSubExpense as addSubToSheet,
   deleteSubExpense as deleteSubOnSheet,
+  getCachedBootstrap,
+  invalidateBootstrapCache,
 } from "../services/sheets";
 import { isSheetsConfigured } from "../config";
 
 export function useSubExpenses() {
-  const [subExpenses, setSubExpenses] = useState<SubExpense[]>([]);
-  const [loading, setLoading] = useState(true);
+  const hadCacheRef = useRef(Boolean(getCachedBootstrap()));
+  const [subExpenses, setSubExpenses] = useState<SubExpense[]>(
+    () => getCachedBootstrap()?.subExpenses ?? []
+  );
+  const [loading, setLoading] = useState(!hadCacheRef.current);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
-    if (!options?.silent) setLoading(true);
+  const load = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    if (!options?.silent && !hadCacheRef.current) setLoading(true);
     setError(null);
     try {
+      if (options?.force) invalidateBootstrapCache();
       setSubExpenses(await fetchSubExpenses());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load line items");
+    } catch {
+      // Non-blocking
     } finally {
-      if (!options?.silent) setLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load({ silent: hadCacheRef.current });
   }, [load]);
 
   const addSubExpense = useCallback(
@@ -50,7 +56,8 @@ export function useSubExpenses() {
         return;
       }
       await addSubToSheet(parentExpenseName, name, amount, participants);
-      await load({ silent: true });
+      invalidateBootstrapCache();
+      await load({ silent: true, force: true });
     },
     [load]
   );
@@ -62,7 +69,8 @@ export function useSubExpenses() {
         return;
       }
       await deleteSubOnSheet(sub.sheetRow);
-      await load({ silent: true });
+      invalidateBootstrapCache();
+      await load({ silent: true, force: true });
     },
     [load]
   );
@@ -87,10 +95,10 @@ export function useSubExpenses() {
     subExpenses,
     loading,
     error,
+    reload: load,
     addSubExpense,
     deleteSubExpense,
     renameParent,
     deleteForParent,
-    reload: load,
   };
 }

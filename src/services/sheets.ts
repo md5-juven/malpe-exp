@@ -1,6 +1,7 @@
 import { SHEETS_CONFIG } from "../config";
 import type { Expense, Friend, ExpenseSplit, SubExpense } from "../types";
 import { parseParticipantsList, formatParticipantsList, normalizeExpenseDate } from "../utils/calculations";
+import { readSheetCache, writeSheetCache } from "./cache";
 
 const DEMO_FRIENDS: Friend[] = [
   { id: "1", name: "Alex", phone: "+91 98765 43001", requiresPassword: true, password: "tab123" },
@@ -19,6 +20,13 @@ const DEMO_EXPENSES: Expense[] = [
 ];
 
 type SheetRow = unknown[];
+
+export interface BootstrapData {
+  friends: Friend[];
+  expenses: Expense[];
+  splits: ExpenseSplit[];
+  subExpenses: SubExpense[];
+}
 
 function cellString(value: unknown): string {
   if (value == null || value === "") return "";
@@ -91,13 +99,37 @@ function parseSubExpenseRow(row: SheetRow, index: number): SubExpense | null {
   };
 }
 
-type SheetAction = "expenses" | "friends" | "travellers" | "splits" | "subExpenses";
+function mapRows<T>(
+  rows: SheetRow[] | undefined,
+  parse: (row: SheetRow, index: number) => T | null
+): T[] {
+  return (rows ?? [])
+    .slice(1)
+    .map((row, i) => parse(row, i))
+    .filter((item): item is T => item !== null);
+}
 
-const FETCH_TIMEOUT_MS = 15000;
+type SheetAction = "expenses" | "friends" | "travellers" | "splits" | "subExpenses" | "bootstrap";
 
-async function fetchJson(url: string): Promise<Record<string, unknown>> {
+const FETCH_TIMEOUT_MS = 14000;
+const MAX_RETRIES = 1;
+
+let lastBootstrapUsedCache = false;
+
+/** True when the latest bootstrap served local cache after a network miss. */
+export function consumeBootstrapCacheFallback(): boolean {
+  const used = lastBootstrapUsedCache;
+  lastBootstrapUsedCache = false;
+  return used;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchJsonOnce(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -105,6 +137,7 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
       signal: controller.signal,
       redirect: "follow",
       headers: { Accept: "application/json,text/plain,*/*" },
+      cache: "no-store",
     });
 
     if (!response.ok) {
@@ -119,15 +152,40 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Request timed out. Check your Apps Script deployment.");
+      throw new Error("SYNC_TIMEOUT");
     }
     if (err instanceof TypeError) {
-      throw new Error("Could not reach Google Sheets. Check the script URL / network.");
+      throw new Error("SYNC_NETWORK");
     }
     throw err;
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+async function fetchJson(url: string): Promise<Record<string, unknown>> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const timeout = FETCH_TIMEOUT_MS + attempt * 8000;
+      return await fetchJsonOnce(url, timeout);
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        await sleep(600 * (attempt + 1));
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    if (lastError.message === "SYNC_TIMEOUT") {
+      throw new Error("Taking longer than usual. Retry in a moment.");
+    }
+    if (lastError.message === "SYNC_NETWORK") {
+      throw new Error("Connection hiccup. Retry in a moment.");
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Could not sync");
 }
 
 async function fetchViaScript(action: SheetAction): Promise<SheetRow[]> {
@@ -158,47 +216,159 @@ function verifyFromFriends(friends: Friend[], name: string, password: string): s
   return friend.name;
 }
 
-export async function fetchExpenses(): Promise<Expense[]> {
-  if (!SHEETS_CONFIG.scriptUrl) return DEMO_EXPENSES;
-  const rows = await fetchViaScript("expenses");
-  return rows
-    .slice(1)
-    .map((row, i) => parseExpenseRow(row, i))
-    .filter((e): e is Expense => e !== null);
+function parseBootstrapPayload(data: Record<string, unknown>): BootstrapData {
+  return {
+    friends: mapRows(data.friends as SheetRow[] | undefined, parseFriendRow),
+    expenses: mapRows(data.expenses as SheetRow[] | undefined, parseExpenseRow),
+    splits: mapRows(data.splits as SheetRow[] | undefined, parseSplitRow),
+    subExpenses: mapRows(data.subExpenses as SheetRow[] | undefined, parseSubExpenseRow),
+  };
 }
 
-export async function fetchFriends(): Promise<Friend[]> {
-  if (!SHEETS_CONFIG.scriptUrl) return DEMO_FRIENDS;
+let bootstrapInflight: Promise<BootstrapData> | null = null;
 
+/** One round-trip for all sheet tabs — shared across hooks. */
+export async function fetchBootstrap(options?: { force?: boolean }): Promise<BootstrapData> {
+  if (!SHEETS_CONFIG.scriptUrl) {
+    return {
+      friends: DEMO_FRIENDS,
+      expenses: DEMO_EXPENSES,
+      splits: [],
+      subExpenses: [],
+    };
+  }
+
+  if (!options?.force && bootstrapInflight) {
+    return bootstrapInflight;
+  }
+
+  bootstrapInflight = (async () => {
+    lastBootstrapUsedCache = false;
+    try {
+      const url = `${SHEETS_CONFIG.scriptUrl}?action=bootstrap`;
+      const data = await fetchJson(url);
+      if (data.error) throw new Error(String(data.error));
+
+      // Older deployments without bootstrap fall back to 4 parallel GETs
+      if (!("friends" in data) && !("expenses" in data)) {
+        throw new Error("BOOTSTRAP_UNSUPPORTED");
+      }
+
+      const parsed = parseBootstrapPayload(data);
+      writeSheetCache(parsed);
+      return parsed;
+    } catch (err) {
+      if (err instanceof Error && err.message === "BOOTSTRAP_UNSUPPORTED") {
+        try {
+          const [friends, expenses, splits, subExpenses] = await Promise.all([
+            fetchFriendsLegacy(),
+            fetchExpensesLegacy(),
+            fetchSplitsLegacy(),
+            fetchSubExpensesLegacy(),
+          ]);
+          const parsed = { friends, expenses, splits, subExpenses };
+          writeSheetCache(parsed);
+          return parsed;
+        } catch (legacyErr) {
+          const cached = readSheetCache();
+          if (cached) {
+            lastBootstrapUsedCache = true;
+            return {
+              friends: cached.friends,
+              expenses: cached.expenses,
+              splits: cached.splits,
+              subExpenses: cached.subExpenses,
+            };
+          }
+          throw legacyErr;
+        }
+      }
+
+      const cached = readSheetCache();
+      if (cached) {
+        lastBootstrapUsedCache = true;
+        return {
+          friends: cached.friends,
+          expenses: cached.expenses,
+          splits: cached.splits,
+          subExpenses: cached.subExpenses,
+        };
+      }
+      throw err;
+    } finally {
+      // Allow a later force refresh; keep brief coalescing for concurrent callers
+      window.setTimeout(() => {
+        bootstrapInflight = null;
+      }, 1200);
+    }
+  })();
+
+  return bootstrapInflight;
+}
+
+export function getCachedBootstrap(): BootstrapData | null {
+  const cached = readSheetCache();
+  if (!cached) return null;
+  return {
+    friends: cached.friends,
+    expenses: cached.expenses,
+    splits: cached.splits,
+    subExpenses: cached.subExpenses,
+  };
+}
+
+async function fetchExpensesLegacy(): Promise<Expense[]> {
+  const rows = await fetchViaScript("expenses");
+  return mapRows(rows, parseExpenseRow);
+}
+
+async function fetchFriendsLegacy(): Promise<Friend[]> {
   let rows: SheetRow[] = [];
   try {
     rows = await fetchViaScript("friends");
   } catch {
     rows = await fetchViaScript("travellers");
   }
+  return mapRows(rows, parseFriendRow);
+}
 
-  return rows
-    .slice(1)
-    .map((row, i) => parseFriendRow(row, i))
-    .filter((f): f is Friend => f !== null);
+async function fetchSplitsLegacy(): Promise<ExpenseSplit[]> {
+  const rows = await fetchViaScript("splits");
+  return mapRows(rows, parseSplitRow);
+}
+
+async function fetchSubExpensesLegacy(): Promise<SubExpense[]> {
+  const rows = await fetchViaScript("subExpenses");
+  return mapRows(rows, parseSubExpenseRow);
+}
+
+export async function fetchExpenses(): Promise<Expense[]> {
+  if (!SHEETS_CONFIG.scriptUrl) return DEMO_EXPENSES;
+  const boot = await fetchBootstrap();
+  return boot.expenses;
+}
+
+export async function fetchFriends(): Promise<Friend[]> {
+  if (!SHEETS_CONFIG.scriptUrl) return DEMO_FRIENDS;
+  const boot = await fetchBootstrap();
+  return boot.friends;
 }
 
 export async function fetchSplits(): Promise<ExpenseSplit[]> {
   if (!SHEETS_CONFIG.scriptUrl) return [];
-  const rows = await fetchViaScript("splits");
-  return rows
-    .slice(1)
-    .map((row, i) => parseSplitRow(row, i))
-    .filter((s): s is ExpenseSplit => s !== null);
+  const boot = await fetchBootstrap();
+  return boot.splits;
 }
 
 export async function fetchSubExpenses(): Promise<SubExpense[]> {
   if (!SHEETS_CONFIG.scriptUrl) return [];
-  const rows = await fetchViaScript("subExpenses");
-  return rows
-    .slice(1)
-    .map((row, i) => parseSubExpenseRow(row, i))
-    .filter((s): s is SubExpense => s !== null);
+  const boot = await fetchBootstrap();
+  return boot.subExpenses;
+}
+
+/** Drop shared inflight so the next load hits the network. */
+export function invalidateBootstrapCache(): void {
+  bootstrapInflight = null;
 }
 
 export async function addExpense(

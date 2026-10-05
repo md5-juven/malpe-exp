@@ -55,14 +55,15 @@ export default function App() {
     friends,
     loading: friendsLoading,
     error: friendsError,
+    softNotice,
+    clearSoftNotice,
     isDemo: friendsDemo,
     addFriend,
+    reload: reloadFriends,
   } = useFriends();
 
   const {
     splits,
-    loading: splitsLoading,
-    error: splitsError,
     saveSplit,
     removeSplitsForExpense,
     reload: reloadSplits,
@@ -70,8 +71,6 @@ export default function App() {
 
   const {
     subExpenses,
-    loading: subLoading,
-    error: subError,
     addSubExpense,
     deleteSubExpense,
     renameParent,
@@ -80,7 +79,8 @@ export default function App() {
   } = useSubExpenses();
 
   const isDemo = expensesDemo || friendsDemo;
-  const loading = expensesLoading || friendsLoading || splitsLoading || subLoading;
+  // Don't block the UI on splits/sub-expenses; shared bootstrap fills them in.
+  const booting = (expensesLoading || friendsLoading) && friends.length === 0;
 
   const displayExpenses = useMemo(
     () => mergeSubExpensesIntoExpenses(expenses, subExpenses),
@@ -104,7 +104,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (loading || initialUserResolved) return;
+    if (booting || initialUserResolved) return;
 
     setInitialUserResolved(true);
     setDataReady(true);
@@ -116,10 +116,11 @@ export default function App() {
       clearSession();
       setCurrentUser(null);
     }
-  }, [loading, friends, initialUserResolved]);
+  }, [booting, friends, initialUserResolved]);
 
   const handleRetryBoot = () => {
-    window.location.reload();
+    void reloadFriends({ force: true });
+    void reloadExpenses({ force: true });
   };
 
   const handleUserConfirm = (name: string) => {
@@ -217,15 +218,16 @@ export default function App() {
     }
   };
 
-  if (loading || !dataReady) {
+  if (booting || !dataReady) {
     return <LoadingScreen message="Loading your tab…" />;
   }
 
-  if (friends.length === 0 || friendsError) {
+  if (friends.length === 0) {
     return (
       <LoadingScreen
         error={
           friendsError ||
+          expensesError ||
           "No friends found in your Google Sheet. Add Name / Phone / Password rows in the Friends tab."
         }
         onRetry={handleRetryBoot}
@@ -263,11 +265,34 @@ export default function App() {
           </div>
         ) : null}
 
-        {(expensesError || friendsError || splitsError || subError) && (
-          <div className="mb-4 rounded-2xl bg-rose/10 px-4 py-3 text-sm text-rose" role="alert">
-            {expensesError || friendsError || splitsError || subError}
+        {softNotice ? (
+          <div
+            className="mb-4 flex items-start justify-between gap-3 rounded-2xl border border-gold/20 bg-gold/10 px-4 py-3 text-sm text-pearl/90"
+            role="status"
+          >
+            <div>
+              <p>{softNotice}</p>
+              <button
+                type="button"
+                className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold underline-offset-2 hover:underline"
+                onClick={() => {
+                  clearSoftNotice();
+                  void reloadFriends({ force: true, silent: true });
+                  void reloadExpenses({ force: true, silent: true });
+                }}
+              >
+                Refresh now
+              </button>
+            </div>
+            <button
+              type="button"
+              className="shrink-0 text-xs text-muted hover:text-pearl"
+              onClick={clearSoftNotice}
+            >
+              Dismiss
+            </button>
           </div>
-        )}
+        ) : null}
 
         {activeTab === "home" ? (
           <HomeView

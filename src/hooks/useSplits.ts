@@ -1,27 +1,36 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExpenseSplit } from "../types";
-import { fetchSplits, saveSplit as saveSplitToSheet } from "../services/sheets";
+import {
+  fetchSplits,
+  saveSplit as saveSplitToSheet,
+  getCachedBootstrap,
+  invalidateBootstrapCache,
+} from "../services/sheets";
 import { isSheetsConfigured } from "../config";
 
 export function useSplits() {
-  const [splits, setSplits] = useState<ExpenseSplit[]>([]);
-  const [loading, setLoading] = useState(true);
+  const hadCacheRef = useRef(Boolean(getCachedBootstrap()));
+  const [splits, setSplits] = useState<ExpenseSplit[]>(
+    () => getCachedBootstrap()?.splits ?? []
+  );
+  const [loading, setLoading] = useState(!hadCacheRef.current);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
-    if (!options?.silent) setLoading(true);
+  const load = useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
+    if (!options?.silent && !hadCacheRef.current) setLoading(true);
     setError(null);
     try {
+      if (options?.force) invalidateBootstrapCache();
       setSplits(await fetchSplits());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load splits");
+    } catch {
+      // Splits can stay empty; don't block the app
     } finally {
-      if (!options?.silent) setLoading(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load({ silent: hadCacheRef.current });
   }, [load]);
 
   const saveSplit = useCallback(
@@ -46,6 +55,7 @@ export function useSplits() {
 
       if (isSheetsConfigured()) {
         await saveSplitToSheet(expenseName, personName, amount);
+        invalidateBootstrapCache();
       }
     },
     []
