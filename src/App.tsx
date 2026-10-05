@@ -101,7 +101,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (loading || friends.length === 0 || initialUserResolved) return;
+    if (loading || initialUserResolved) return;
 
     setInitialUserResolved(true);
     setDataReady(true);
@@ -114,6 +114,10 @@ export default function App() {
       setCurrentUser(null);
     }
   }, [loading, friends, initialUserResolved]);
+
+  const handleRetryBoot = () => {
+    window.location.reload();
+  };
 
   const handleUserConfirm = (name: string) => {
     createSession(name);
@@ -189,7 +193,21 @@ export default function App() {
     }
   };
 
-  if (loading || !dataReady) return <LoadingScreen />;
+  if (loading || !dataReady) {
+    return <LoadingScreen message="Loading your tab…" />;
+  }
+
+  if (friends.length === 0 || friendsError) {
+    return (
+      <LoadingScreen
+        error={
+          friendsError ||
+          "No friends found in your Google Sheet. Add Name / Phone / Password rows in the Friends tab."
+        }
+        onRetry={handleRetryBoot}
+      />
+    );
+  }
 
   if (!currentUser) {
     return <LoginModal onConfirm={handleUserConfirm} verifyPassword={handleVerifyPassword} />;

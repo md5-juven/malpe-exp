@@ -93,20 +93,56 @@ function parseSubExpenseRow(row: SheetRow, index: number): SubExpense | null {
 
 type SheetAction = "expenses" | "friends" | "travellers" | "splits" | "subExpenses";
 
+const FETCH_TIMEOUT_MS = 15000;
+
+async function fetchJson(url: string): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { Accept: "application/json,text/plain,*/*" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error("Google Script returned an invalid response. Redeploy the web app.");
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out. Check your Apps Script deployment.");
+    }
+    if (err instanceof TypeError) {
+      throw new Error("Could not reach Google Sheets. Check the script URL / network.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function fetchViaScript(action: SheetAction): Promise<SheetRow[]> {
+  if (!SHEETS_CONFIG.scriptUrl) return [];
   const url = `${SHEETS_CONFIG.scriptUrl}?action=${action}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch ${action}`);
-  const data = await response.json();
-  return data.rows ?? [];
+  const data = await fetchJson(url);
+  if (data.error) throw new Error(String(data.error));
+  return (data.rows as SheetRow[]) ?? [];
 }
 
 async function getViaScript(params: Record<string, string>): Promise<Record<string, unknown>> {
+  if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
   const url = `${SHEETS_CONFIG.scriptUrl}?${new URLSearchParams(params)}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Request failed (${response.status})`);
-  const data = await response.json();
-  if (data.error) throw new Error(data.error);
+  const data = await fetchJson(url);
+  if (data.error) throw new Error(String(data.error));
   return data;
 }
 
