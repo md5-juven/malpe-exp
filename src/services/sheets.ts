@@ -244,46 +244,20 @@ export async function fetchBootstrap(options?: { force?: boolean }): Promise<Boo
 
   bootstrapInflight = (async () => {
     lastBootstrapUsedCache = false;
-    try {
-      const url = `${SHEETS_CONFIG.scriptUrl}?action=bootstrap`;
-      const data = await fetchJson(url);
-      if (data.error) throw new Error(String(data.error));
 
-      // Older deployments without bootstrap fall back to 4 parallel GETs
-      if (!("friends" in data) && !("expenses" in data)) {
-        throw new Error("BOOTSTRAP_UNSUPPORTED");
-      }
-
-      const parsed = parseBootstrapPayload(data);
+    const loadLegacy = async (): Promise<BootstrapData> => {
+      const [friends, expenses, splits, subExpenses] = await Promise.all([
+        fetchFriendsLegacy(),
+        fetchExpensesLegacy(),
+        fetchSplitsLegacy(),
+        fetchSubExpensesLegacy(),
+      ]);
+      const parsed = { friends, expenses, splits, subExpenses };
       writeSheetCache(parsed);
       return parsed;
-    } catch (err) {
-      if (err instanceof Error && err.message === "BOOTSTRAP_UNSUPPORTED") {
-        try {
-          const [friends, expenses, splits, subExpenses] = await Promise.all([
-            fetchFriendsLegacy(),
-            fetchExpensesLegacy(),
-            fetchSplitsLegacy(),
-            fetchSubExpensesLegacy(),
-          ]);
-          const parsed = { friends, expenses, splits, subExpenses };
-          writeSheetCache(parsed);
-          return parsed;
-        } catch (legacyErr) {
-          const cached = readSheetCache();
-          if (cached) {
-            lastBootstrapUsedCache = true;
-            return {
-              friends: cached.friends,
-              expenses: cached.expenses,
-              splits: cached.splits,
-              subExpenses: cached.subExpenses,
-            };
-          }
-          throw legacyErr;
-        }
-      }
+    };
 
+    const fromCacheOrThrow = (err: unknown): BootstrapData => {
       const cached = readSheetCache();
       if (cached) {
         lastBootstrapUsedCache = true;
@@ -294,9 +268,57 @@ export async function fetchBootstrap(options?: { force?: boolean }): Promise<Boo
           subExpenses: cached.subExpenses,
         };
       }
-      throw err;
+      throw err instanceof Error ? err : new Error("Could not sync");
+    };
+
+    const isBootstrapUnsupported = (err: unknown) => {
+      if (!(err instanceof Error)) return false;
+      const msg = err.message.toLowerCase();
+      return (
+        err.message === "BOOTSTRAP_UNSUPPORTED" ||
+        msg.includes("invalid action") ||
+        msg.includes("unknown action")
+      );
+    };
+
+    try {
+      const url = `${SHEETS_CONFIG.scriptUrl}?action=bootstrap`;
+      const data = await fetchJson(url);
+
+      // Older deployments reply with { error: "Invalid action" } for bootstrap
+      if (data.error) {
+        const errMsg = String(data.error);
+        if (/invalid action|unknown action/i.test(errMsg)) {
+          try {
+            return await loadLegacy();
+          } catch (legacyErr) {
+            return fromCacheOrThrow(legacyErr);
+          }
+        }
+        throw new Error(errMsg);
+      }
+
+      if (!("friends" in data) && !("expenses" in data)) {
+        try {
+          return await loadLegacy();
+        } catch (legacyErr) {
+          return fromCacheOrThrow(legacyErr);
+        }
+      }
+
+      const parsed = parseBootstrapPayload(data);
+      writeSheetCache(parsed);
+      return parsed;
+    } catch (err) {
+      if (isBootstrapUnsupported(err)) {
+        try {
+          return await loadLegacy();
+        } catch (legacyErr) {
+          return fromCacheOrThrow(legacyErr);
+        }
+      }
+      return fromCacheOrThrow(err);
     } finally {
-      // Allow a later force refresh; keep brief coalescing for concurrent callers
       window.setTimeout(() => {
         bootstrapInflight = null;
       }, 1200);
