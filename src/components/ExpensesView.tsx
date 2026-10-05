@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Pencil, Plus, Trash2, ChevronDown, Users, LayoutDashboard } from "lucide-react";
 import type { Expense, Friend, ExpenseSplit, SubExpense } from "../types";
 import {
@@ -87,7 +87,7 @@ export function ExpensesView({
     }
   }, [personFilter, currentUser]);
 
-  const friendNames = friends.map((f) => f.name);
+  const friendNames = useMemo(() => friends.map((f) => f.name), [friends]);
 
   const payerOptions = useMemo(() => {
     const names = new Set<string>();
@@ -110,7 +110,26 @@ export function ExpensesView({
     return expenses;
   }, [expenses, filter, currentUser, personFilter]);
 
-  const total = filtered.reduce((s, e) => s + e.amount, 0);
+  const total = useMemo(
+    () => filtered.reduce((s, e) => s + e.amount, 0),
+    [filtered]
+  );
+
+  const breakdownById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getExpenseOwesBreakdown>>();
+    for (const expense of filtered) {
+      map.set(expense.id, getExpenseOwesBreakdown(expense, friends, splits));
+    }
+    return map;
+  }, [filtered, friends, splits]);
+
+  const participantCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const expense of filtered) {
+      map.set(expense.id, getExpenseParticipants(expense, friends).length);
+    }
+    return map;
+  }, [filtered, friends]);
 
   const headerLabel =
     filter === "mine"
@@ -121,7 +140,7 @@ export function ExpensesView({
 
   return (
     <div>
-      <div className="sticky top-16 z-20 -mx-4 space-y-3 border-b border-border/50 bg-ink/95 px-4 pb-3 pt-1 backdrop-blur-xl">
+      <div className="sticky top-16 z-20 -mx-4 space-y-3 border-b border-border/50 bg-ink px-4 pb-3 pt-1 md:bg-ink/95 md:backdrop-blur-xl">
         <div className="flex items-end justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-muted">{headerLabel}</p>
@@ -210,13 +229,12 @@ export function ExpensesView({
                 : "No tabs yet."}
           </p>
         ) : null}
-        <AnimatePresence mode="popLayout">
-          {filtered.map((expense, i) => {
+        {filtered.map((expense) => {
             const open = expanded === expense.id;
-            const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+            const breakdown = breakdownById.get(expense.id) ?? [];
             const visual = getExpenseVisual(expense.name);
             const Icon = visual.Icon;
-            const people = getExpenseParticipants(expense, friends).length;
+            const people = participantCountById.get(expense.id) ?? 0;
             const isOwner = canModifyExpense(currentUser, expense);
             const youRow = breakdown.find(
               (r) => r.name.toLowerCase() === currentUser.toLowerCase()
@@ -227,13 +245,8 @@ export function ExpensesView({
             const showPayCta = youOwe > 0 && !isPayer;
 
             return (
-              <motion.article
+              <article
                 key={expense.id}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                transition={{ delay: Math.min(i * 0.03, 0.2) }}
                 className="overflow-hidden rounded-[1.5rem] border border-border bg-surface/80 shadow-[0_12px_32px_rgb(0_0_0/0.2)]"
               >
                 <div className="p-3 pb-2">
@@ -295,14 +308,8 @@ export function ExpensesView({
                   </button>
                 </div>
 
-                <AnimatePresence>
-                  {open ? (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-border"
-                    >
+                {open ? (
+                  <div className="border-t border-border">
                       <div className="space-y-3 px-4 py-3">
                         {expense.subExpenses?.length ? (
                           <div className="space-y-2">
@@ -398,13 +405,11 @@ export function ExpensesView({
                           )}
                         </div>
                       </div>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-              </motion.article>
+                  </div>
+                ) : null}
+              </article>
             );
           })}
-        </AnimatePresence>
       </div>
 
       <ExpenseFormModal

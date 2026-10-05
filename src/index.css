@@ -45,6 +45,23 @@
     background-attachment: fixed;
   }
 
+  @media (max-width: 768px) {
+    body {
+      background-attachment: scroll;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   #root {
     min-height: 100dvh;
   }
@@ -181,4 +198,32 @@
 }
 .stagger-4 {
   animation-delay: 0.2s;
+}
+
+@keyframes float-icon {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(2deg);
+  }
+}
+
+.animate-float-icon {
+  animation: float-icon 5s ease-in-out infinite;
+}
+
+.split-bar {
+  transition: height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-icon {
+    animation: none;
+  }
+
+  .split-bar {
+    transition: none;
+  }
 }

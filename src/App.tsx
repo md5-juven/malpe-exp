@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Expense, SubExpense, TabId } from "./types";
+import type { Expense, SubExpense } from "./types";
 import { useExpenses } from "./hooks/useExpenses";
 import { useFriends } from "./hooks/useFriends";
 import { useSplits } from "./hooks/useSplits";
 import { useSubExpenses } from "./hooks/useSubExpenses";
+import { useAppHistory } from "./hooks/useAppHistory";
 import {
   calculateBalances,
   calculatePersonDues,
@@ -30,14 +31,10 @@ import { useAlert } from "./components/ui/AlertProvider";
 
 export default function App() {
   const { confirm } = useAlert();
-  const [activeTab, setActiveTab] = useState<TabId>("home");
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [showAccount, setShowAccount] = useState(false);
   const [dataReady, setDataReady] = useState(false);
   const [initialUserResolved, setInitialUserResolved] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [focusExpenseId, setFocusExpenseId] = useState<string | null>(null);
-  const [settleReturnTab, setSettleReturnTab] = useState<TabId>("home");
   const [openAddExpense, setOpenAddExpense] = useState(false);
 
   const {
@@ -77,6 +74,17 @@ export default function App() {
     deleteForParent,
     reload: reloadSubExpenses,
   } = useSubExpenses();
+
+  const {
+    tab: activeTab,
+    focusExpenseId,
+    showAccount,
+    goToTab,
+    openSettle,
+    clearSettleFocus,
+    openAccount,
+    closeAccount,
+  } = useAppHistory(Boolean(currentUser));
 
   const isDemo = expensesDemo || friendsDemo;
   // Don't block the UI on splits/sub-expenses; shared bootstrap fills them in.
@@ -126,8 +134,7 @@ export default function App() {
   const handleUserConfirm = (name: string) => {
     createSession(name);
     setCurrentUser(name);
-    setShowAccount(false);
-    setActiveTab("home");
+    goToTab("home", { replace: true });
   };
 
   const handleLogout = async () => {
@@ -141,8 +148,8 @@ export default function App() {
     if (!ok) return;
     clearSession();
     setCurrentUser(null);
-    setShowAccount(false);
-    setActiveTab("home");
+    closeAccount();
+    goToTab("home", { replace: true });
   };
 
   const handleVerifyPassword = async (name: string, password: string) => {
@@ -243,7 +250,7 @@ export default function App() {
     <div className="mx-auto min-h-dvh max-w-lg pb-32">
       <Header
         currentUser={currentUser}
-        onOpenAccount={() => setShowAccount(true)}
+        onOpenAccount={openAccount}
         compact={activeTab === "home"}
       />
 
@@ -300,20 +307,12 @@ export default function App() {
             dues={userDues}
             expenses={displayExpenses}
             friends={friends}
-            onGoSettle={() => {
-              setFocusExpenseId(null);
-              setSettleReturnTab("home");
-              setActiveTab("settle");
-            }}
-            onGoExpenses={() => setActiveTab("expenses")}
-            onOpenExpense={(expense) => {
-              setFocusExpenseId(expense.id);
-              setSettleReturnTab("home");
-              setActiveTab("settle");
-            }}
+            onGoSettle={() => openSettle(null)}
+            onGoExpenses={() => goToTab("expenses")}
+            onOpenExpense={(expense) => openSettle(expense.id)}
             onAddExpense={() => {
               setOpenAddExpense(true);
-              setActiveTab("expenses");
+              goToTab("expenses");
             }}
           />
         ) : null}
@@ -331,11 +330,7 @@ export default function App() {
             onDelete={handleDeleteExpense}
             onAddSub={handleAddSubExpense}
             onDeleteSub={handleDeleteSubExpense}
-            onViewSplit={(expense) => {
-              setFocusExpenseId(expense.id);
-              setSettleReturnTab("expenses");
-              setActiveTab("settle");
-            }}
+            onViewSplit={(expense) => openSettle(expense.id)}
           />
         ) : null}
 
@@ -348,10 +343,7 @@ export default function App() {
             friends={friends}
             splits={splits}
             focusExpenseId={focusExpenseId}
-            onClearFocus={() => {
-              setFocusExpenseId(null);
-              setActiveTab(settleReturnTab);
-            }}
+            onClearFocus={clearSettleFocus}
             onSaveSplit={saveSplit}
           />
         ) : null}
@@ -361,18 +353,12 @@ export default function App() {
         ) : null}
       </main>
 
-      <TabNav
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          if (tab !== "settle") setFocusExpenseId(null);
-          setActiveTab(tab);
-        }}
-      />
+      <TabNav activeTab={activeTab} onTabChange={(tab) => goToTab(tab)} />
 
       {showAccount && accountFriend ? (
         <AccountSheet
           user={accountFriend}
-          onClose={() => setShowAccount(false)}
+          onClose={closeAccount}
           onLogout={handleLogout}
         />
       ) : null}

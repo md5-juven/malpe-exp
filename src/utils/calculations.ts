@@ -372,9 +372,19 @@ export function calculatePersonDues(
 
   const expenseOwes: ExpenseOwed[] = [];
   const payeeAmounts = new Map<string, number>();
+  const breakdownCache = new Map<string, ReturnType<typeof getExpenseOwesBreakdown>>();
+
+  const breakdownFor = (expense: Expense) => {
+    let cached = breakdownCache.get(expense.id);
+    if (!cached) {
+      cached = getExpenseOwesBreakdown(expense, friends, splits);
+      breakdownCache.set(expense.id, cached);
+    }
+    return cached;
+  };
 
   for (const expense of expenses) {
-    const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+    const breakdown = breakdownFor(expense);
     const person = breakdown.find((p) => normalizeKey(p.name) === personKey);
     if (!person || person.owes <= 0) continue;
 
@@ -393,7 +403,7 @@ export function calculatePersonDues(
 
   for (const expense of expenses) {
     if (normalizeKey(expense.paidBy) !== personKey) continue;
-    const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+    const breakdown = breakdownFor(expense);
     for (const entry of breakdown) {
       if (normalizeKey(entry.name) === personKey || entry.owes <= 0) continue;
       const debtorKey = normalizeKey(entry.name);

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ArrowRight, Plus, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Expense, Friend, PersonDues } from "../types";
@@ -26,7 +27,7 @@ export function HomeView({
   onAddExpense,
 }: HomeViewProps) {
   const featured = expenses[expenses.length - 1] ?? null;
-  const recent = [...expenses].reverse().slice(0, 4);
+  const recent = useMemo(() => [...expenses].reverse().slice(0, 4), [expenses]);
   const youOwe = dues?.totalOwes ?? 0;
   const youGet = dues?.totalGetsBack ?? 0;
   const featuredVisual = featured ? getExpenseVisual(featured.name) : null;
@@ -71,13 +72,9 @@ export function HomeView({
             <div className="pointer-events-none absolute -left-8 bottom-0 h-28 w-28 rounded-full bg-ink/20 blur-2xl" />
 
             <div className="relative flex flex-col items-center text-center">
-              <motion.div
-                animate={{ y: [0, -8, 0], rotate: [0, -3, 3, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                className="mb-4 flex h-28 w-28 items-center justify-center rounded-[2rem] bg-ink/25 shadow-inner backdrop-blur-sm"
-              >
+              <div className="animate-float-icon mb-4 flex h-28 w-28 items-center justify-center rounded-[2rem] bg-ink/25 shadow-inner">
                 <FeaturedIcon size={56} className={featuredVisual.accent} strokeWidth={1.5} />
-              </motion.div>
+              </div>
 
               <p className="text-xs uppercase tracking-[0.18em] text-pearl/55">Total bill</p>
               <p className="mt-1 font-display text-4xl font-extrabold tracking-tight text-pearl">
@@ -195,12 +192,9 @@ export function HomeView({
             const isLast = i === recent.length - 1 && recent.length > 2;
 
             return (
-              <motion.button
+              <button
                 key={expense.id}
                 type="button"
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 * i }}
                 onClick={() => onOpenExpense(expense)}
                 className={`flex w-full items-center gap-3 rounded-[1.4rem] border border-border bg-surface/80 p-3 text-left shadow-[0_10px_30px_rgb(0_0_0/0.18)] transition hover:border-border-strong ${
                   isLast ? "origin-bottom rotate-[-1.2deg]" : ""
@@ -225,7 +219,7 @@ export function HomeView({
                 <span className="font-display text-base font-bold text-gold">
                   {formatCurrency(expense.amount)}
                 </span>
-              </motion.button>
+              </button>
             );
           })}
 

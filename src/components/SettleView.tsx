@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowLeft, Check, Copy, Info, Phone } from "lucide-react";
 import type { Expense, Friend, ExpenseSplit, PersonBalance, PersonDues } from "../types";
 import {
@@ -113,15 +113,8 @@ export function SettleView({
         ))}
       </div>
 
-      <AnimatePresence mode="wait">
-        {mode === "split" ? (
-          <motion.div
-            key="split"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-4"
-          >
+      {mode === "split" ? (
+          <div className="space-y-4">
             {expenses.length > 1 ? (
               <MenuSelect
                 label="Tab"
@@ -290,16 +283,10 @@ export function SettleView({
             ) : (
               <EmptyState />
             )}
-          </motion.div>
+          </div>
         ) : null}
 
         {mode === "dues" ? (
-          <motion.div
-            key="dues"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-          >
             <DuesPanel
               dues={dues}
               balances={balances}
@@ -307,25 +294,16 @@ export function SettleView({
               copied={copied}
               onCopy={copyPhone}
             />
-          </motion.div>
         ) : null}
 
         {mode === "payments" ? (
-          <motion.div
-            key="payments"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-          >
             <PaymentsPanel
               expenses={expenses}
               friends={friends}
               splits={splits}
               onSaveSplit={onSaveSplit}
             />
-          </motion.div>
         ) : null}
-      </AnimatePresence>
     </div>
   );
 }
@@ -521,7 +499,7 @@ function PaymentsPanel({
 
   if (!expense) return <EmptyState />;
 
-  const breakdown = getExpenseOwesBreakdown(expense, friends, []);
+  const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
   const equalShare = Math.round(expense.amount / (breakdown.length || 1));
 
   return (

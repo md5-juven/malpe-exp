@@ -17,7 +17,7 @@ interface TabNavProps {
 export function TabNav({ activeTab, onTabChange }: TabNavProps) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-[max(0.85rem,env(safe-area-inset-bottom))] pt-2">
-      <div className="mx-auto flex max-w-lg items-center gap-1 rounded-[1.75rem] border border-border/80 bg-surface/90 p-1.5 shadow-[0_16px_48px_rgb(0_0_0/0.45)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-lg items-center gap-1 rounded-[1.75rem] border border-border/80 bg-surface p-1.5 shadow-[0_16px_48px_rgb(0_0_0/0.45)] md:bg-surface/90 md:backdrop-blur-xl">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           const Icon = tab.icon;

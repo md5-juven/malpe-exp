@@ -9,7 +9,7 @@ interface HeaderProps {
 export function Header({ currentUser, onOpenAccount, compact }: HeaderProps) {
   if (compact) {
     return (
-      <header className="sticky top-0 z-30 bg-ink/70 px-4 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 bg-ink px-4 py-3 md:bg-ink/70 md:backdrop-blur-xl">
         <div className="mx-auto flex max-w-lg items-center justify-end">
           {currentUser ? (
             <button
@@ -27,7 +27,7 @@ export function Header({ currentUser, onOpenAccount, compact }: HeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border/60 bg-ink/80 px-4 py-3 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 border-b border-border/60 bg-ink px-4 py-3 md:bg-ink/80 md:backdrop-blur-xl">
       <div className="mx-auto flex max-w-lg items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-gold-bright to-gold-dim shadow-[0_6px_20px_rgb(228_181_106/0.3)]">
