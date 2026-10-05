@@ -1,5 +1,5 @@
 /**
- * TabCheck — Google Apps Script backend
+ * TabCheck - Google Apps Script backend
  *
  * Setup:
  * 1. Create a Google Sheet with tabs:
@@ -241,7 +241,7 @@ function verifyUserCredentials(ss, name, password) {
     if (String(rows[i][0]).trim().toLowerCase() === nameKey) {
       const storedPassword = cellPassword(rows[i][2]);
       if (!storedPassword) {
-        return { error: "No password set for this user — ask your admin" };
+        return { error: "No password set for this user. Ask your admin" };
       }
       if (storedPassword === entered) return { success: true };
       return { error: "Incorrect password" };

@@ -150,7 +150,7 @@ function verifyFromFriends(friends: Friend[], name: string, password: string): s
   const friend = friends.find((f) => f.name.trim().toLowerCase() === name.trim().toLowerCase());
   if (!friend) throw new Error("User not found");
   if (!friend.password) {
-    throw new Error("No password set for this user — ask your admin");
+    throw new Error("No password set for this user. Ask your admin");
   }
   if (friend.password !== password.trim()) {
     throw new Error("Incorrect password");

@@ -114,7 +114,7 @@ export function canModifyExpense(
   return key(userName) === key(expense.paidBy);
 }
 
-/** @deprecated Use canModifyExpense — deletes are per-expense, not global admin. */
+/** @deprecated Use canModifyExpense - deletes are per-expense, not global admin. */
 export function canDeleteExpenses(name: string, _friends?: Friend[]): boolean {
   return isAuthenticated(name);
 }

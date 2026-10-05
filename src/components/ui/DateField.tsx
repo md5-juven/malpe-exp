@@ -57,7 +57,7 @@ interface PopoverPos {
   placeAbove: boolean;
 }
 
-/** Custom dark-gold calendar — floats above modals via portal. */
+/** Custom dark-gold calendar - floats above modals via portal. */
 export function DateField({ value, onChange, label = "Date" }: DateFieldProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<PopoverPos | null>(null);

@@ -1,6 +1,6 @@
 # TabCheck
 
-Split expenses with friends — no backend required. Data lives in **Google Sheets**, the app deploys to **GitHub Pages**.
+Split expenses with friends - no backend required. Data lives in **Google Sheets**, the app deploys to **GitHub Pages**.
 
 ## Features
 
@@ -46,7 +46,7 @@ Open the local URL. Demo data loads automatically until you wire Sheets.
 
    (`Travellers` still works as a fallback name for Friends.)
 
-2. **Extensions → Apps Script** — paste `google-apps-script/Code.gs`
+2. **Extensions → Apps Script** - paste `google-apps-script/Code.gs`
 3. **Deploy → New deployment → Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -79,7 +79,7 @@ Empty = everyone can delete. Users with a password in the sheet must unlock on l
 ### GitHub Pages settings
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**  
-   (not “Deploy from a branch” — that skips our workflow)
+   (not “Deploy from a branch” - that skips our workflow)
 2. **Custom domain:** enter `kirae.tech` → **Save**
 3. After DNS verifies, turn on **Enforce HTTPS**
 
@@ -138,7 +138,7 @@ After the workflow finishes, the app is at:
 ### Local vs CI
 
 - Local: keep secrets in `.env` (gitignored)
-- CI: secrets come from GitHub only — `.env` is never pushed
+- CI: secrets come from GitHub only - `.env` is never pushed
 
 > Note: `VITE_*` values are embedded in the public JS bundle at build time. Secrets keep them out of git history; they are still visible in the built site (expected for a no-backend Sheets app).
 

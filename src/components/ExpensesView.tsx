@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Pencil, Plus, Trash2, ChevronDown, Users } from "lucide-react";
+import { Pencil, Plus, Trash2, ChevronDown, Users, LayoutDashboard } from "lucide-react";
 import type { Expense, Friend, ExpenseSplit, SubExpense } from "../types";
 import {
   formatCurrency,
@@ -46,6 +46,7 @@ interface ExpensesViewProps {
     participants: string[]
   ) => Promise<void>;
   onDeleteSub: (sub: SubExpense) => Promise<void>;
+  onViewSplit: (expense: Expense) => void;
 }
 
 export function ExpensesView({
@@ -60,6 +61,7 @@ export function ExpensesView({
   onDelete,
   onAddSub,
   onDeleteSub,
+  onViewSplit,
 }: ExpensesViewProps) {
   const { confirm } = useAlert();
   const [filter, setFilter] = useState<"all" | "mine">("all");
@@ -132,6 +134,13 @@ export function ExpensesView({
             const Icon = visual.Icon;
             const people = getExpenseParticipants(expense, friends).length;
             const isOwner = canModifyExpense(currentUser, expense);
+            const youRow = breakdown.find(
+              (r) => r.name.toLowerCase() === currentUser.toLowerCase()
+            );
+            const youOwe = youRow?.owes ?? 0;
+            const isPayer =
+              expense.paidBy.toLowerCase() === currentUser.toLowerCase();
+            const showPayCta = youOwe > 0 && !isPayer;
 
             return (
               <motion.article
@@ -143,39 +152,64 @@ export function ExpensesView({
                 transition={{ delay: Math.min(i * 0.03, 0.2) }}
                 className="overflow-hidden rounded-[1.5rem] border border-border bg-surface/80 shadow-[0_12px_32px_rgb(0_0_0/0.2)]"
               >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 p-3 text-left"
-                  onClick={() => setExpanded(open ? null : expense.id)}
-                >
-                  <span
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${visual.gradient}`}
-                  >
-                    <Icon size={24} className={visual.accent} strokeWidth={1.75} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="truncate font-display text-base font-bold text-pearl">
-                        {expense.name}
-                      </h3>
-                      <span className="shrink-0 font-display text-base font-bold text-gold">
-                        {formatCurrency(expense.amount)}
+                <div className="p-3 pb-2">
+                  <div className="flex items-start gap-3">
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      onClick={() => setExpanded(open ? null : expense.id)}
+                    >
+                      <span
+                        className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${visual.gradient}`}
+                      >
+                        <Icon size={24} className={visual.accent} strokeWidth={1.75} />
                       </span>
-                    </div>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                      <span>{formatExpenseDate(expense.date)}</span>
-                      <span>·</span>
-                      <Users size={11} />
-                      <span>{people}</span>
-                      <span>·</span>
-                      <span>{expense.paidBy}</span>
-                    </p>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="truncate font-display text-base font-bold text-pearl">
+                            {expense.name}
+                          </h3>
+                          <span className="shrink-0 font-display text-base font-bold text-gold">
+                            {formatCurrency(expense.amount)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
+                          <span>{formatExpenseDate(expense.date)}</span>
+                          <span>·</span>
+                          <Users size={11} />
+                          <span>{people}</span>
+                          <span>·</span>
+                          <span>{isPayer ? "You paid" : expense.paidBy}</span>
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(open ? null : expense.id)}
+                      className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted transition hover:bg-surface-2 hover:text-pearl"
+                      aria-label={open ? "Collapse tab" : "Expand tab"}
+                    >
+                      <ChevronDown
+                        size={18}
+                        className={`transition ${open ? "rotate-180" : ""}`}
+                      />
+                    </button>
                   </div>
-                  <ChevronDown
-                    size={18}
-                    className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`}
-                  />
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onViewSplit(expense)}
+                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-sm font-semibold transition ${
+                      showPayCta
+                        ? "border-gold/35 bg-gold/10 text-gold hover:border-gold/50 hover:bg-gold/15"
+                        : "border-border bg-surface-2/60 text-pearl/90 hover:border-border-strong hover:bg-surface-2 hover:text-pearl"
+                    }`}
+                  >
+                    <LayoutDashboard size={15} strokeWidth={2.25} />
+                    {showPayCta ? `Pay ${formatCurrency(youOwe)}` : "View split"}
+                  </button>
+                </div>
 
                 <AnimatePresence>
                   {open ? (

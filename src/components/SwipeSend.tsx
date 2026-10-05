@@ -4,12 +4,14 @@ import { Check, ChevronRight } from "lucide-react";
 
 interface SwipeSendProps {
   label?: string;
-  onComplete: () => void;
+  doneLabel?: string;
+  onComplete: () => void | Promise<void>;
   disabled?: boolean;
 }
 
 export function SwipeSend({
   label = "Swipe & Send",
+  doneLabel = "Done",
   onComplete,
   disabled,
 }: SwipeSendProps) {
@@ -42,7 +44,7 @@ export function SwipeSend({
         {done ? (
           <>
             <Check size={16} className="text-ink" />
-            Sent
+            {doneLabel}
           </>
         ) : (
           <>
@@ -67,13 +69,16 @@ export function SwipeSend({
           if (!track) return;
           const max = track.offsetWidth - 64;
           if (x.get() > max * 0.72) {
-            void animate(x, max, { type: "spring", stiffness: 380, damping: 28 }).then(() => {
+            void animate(x, max, { type: "spring", stiffness: 380, damping: 28 }).then(async () => {
               setDone(true);
-              onComplete();
-              window.setTimeout(() => {
-                setDone(false);
-                reset();
-              }, 1600);
+              try {
+                await onComplete();
+              } finally {
+                window.setTimeout(() => {
+                  setDone(false);
+                  reset();
+                }, 1600);
+              }
             });
           } else {
             reset();

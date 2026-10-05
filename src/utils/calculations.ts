@@ -186,6 +186,21 @@ export function findSplitAmount(
   )?.amount;
 }
 
+/**
+ * Net between you and another person from dues.
+ * Positive = they owe you. Negative = you owe them. 0 = even.
+ */
+export function netBalanceWithPerson(
+  dues: PersonDues | null | undefined,
+  otherName: string
+): number {
+  if (!dues) return 0;
+  const k = normalizeKey(otherName);
+  const youOweThem = dues.payees.find((p) => normalizeKey(p.name) === k)?.amount ?? 0;
+  const theyOweYou = dues.owedBy.find((p) => normalizeKey(p.name) === k)?.amount ?? 0;
+  return theyOweYou - youOweThem;
+}
+
 export function getSplitsForExpense(splits: ExpenseSplit[], expenseName: string): ExpenseSplit[] {
   const expenseKey = normalizeKey(expenseName);
   return splits.filter((s) => normalizeKey(s.expenseName) === expenseKey);

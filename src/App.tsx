@@ -37,6 +37,7 @@ export default function App() {
   const [initialUserResolved, setInitialUserResolved] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [focusExpenseId, setFocusExpenseId] = useState<string | null>(null);
+  const [settleReturnTab, setSettleReturnTab] = useState<TabId>("home");
   const [openAddExpense, setOpenAddExpense] = useState(false);
 
   const {
@@ -248,7 +249,7 @@ export default function App() {
         {isDemo && !bannerDismissed ? (
           <div className="mb-4 flex items-start justify-between gap-3 rounded-2xl border border-gold/25 bg-gold/10 px-4 py-3">
             <p className="text-sm text-pearl/90">
-              <span className="font-semibold text-gold">Demo mode</span> — connect Google Sheets
+              <span className="font-semibold text-gold">Demo mode</span>. Connect Google Sheets
               via <code className="text-xs text-mint">VITE_GOOGLE_SCRIPT_URL</code> to sync live
               data.
             </p>
@@ -276,11 +277,13 @@ export default function App() {
             friends={friends}
             onGoSettle={() => {
               setFocusExpenseId(null);
+              setSettleReturnTab("home");
               setActiveTab("settle");
             }}
             onGoExpenses={() => setActiveTab("expenses")}
             onOpenExpense={(expense) => {
               setFocusExpenseId(expense.id);
+              setSettleReturnTab("home");
               setActiveTab("settle");
             }}
             onAddExpense={() => {
@@ -303,6 +306,11 @@ export default function App() {
             onDelete={handleDeleteExpense}
             onAddSub={handleAddSubExpense}
             onDeleteSub={handleDeleteSubExpense}
+            onViewSplit={(expense) => {
+              setFocusExpenseId(expense.id);
+              setSettleReturnTab("expenses");
+              setActiveTab("settle");
+            }}
           />
         ) : null}
 
@@ -317,7 +325,7 @@ export default function App() {
             focusExpenseId={focusExpenseId}
             onClearFocus={() => {
               setFocusExpenseId(null);
-              setActiveTab("home");
+              setActiveTab(settleReturnTab);
             }}
             onSaveSplit={saveSplit}
           />

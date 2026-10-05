@@ -27,13 +27,23 @@ export function HomeView({
 }: HomeViewProps) {
   const featured = expenses[expenses.length - 1] ?? null;
   const recent = [...expenses].reverse().slice(0, 4);
-  const balance = dues?.balance ?? 0;
+  const youOwe = dues?.totalOwes ?? 0;
+  const youGet = dues?.totalGetsBack ?? 0;
   const featuredVisual = featured ? getExpenseVisual(featured.name) : null;
   const FeaturedIcon = featuredVisual?.Icon;
 
+  const duesBlurb =
+    youOwe < 1 && youGet < 1
+      ? "You're all clear. Nice."
+      : youOwe > 0 && youGet > 0
+        ? `You owe ${formatCurrency(youOwe)} · ${formatCurrency(youGet)} coming back.`
+        : youOwe > 0
+          ? `${formatCurrency(youOwe)} left to settle.`
+          : `${formatCurrency(youGet)} coming your way.`;
+
   return (
     <div className="space-y-6">
-      {/* Greeting — reference middle screen */}
+      {/* Greeting - reference middle screen */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -43,13 +53,7 @@ export function HomeView({
         <h2 className="mt-1 font-display text-[2.35rem] leading-[1.05] font-extrabold tracking-tight text-pearl">
           Split your bill
         </h2>
-        <p className="mt-2 text-sm text-muted">
-          {Math.abs(balance) < 1
-            ? "You're all clear — nice."
-            : balance > 0
-              ? `${formatCurrency(balance)} coming your way.`
-              : `${formatCurrency(Math.abs(balance))} left to settle.`}
-        </p>
+        <p className="mt-2 text-sm text-muted">{duesBlurb}</p>
       </motion.div>
 
       {/* Featured bill card */}
@@ -114,25 +118,48 @@ export function HomeView({
         </motion.button>
       )}
 
-      {/* Quick actions */}
+      {/* Quick actions - same language as Settle → My dues */}
       <div className={`grid gap-3 ${featured ? "pt-4" : ""} grid-cols-2`}>
         <button
           type="button"
           onClick={onGoSettle}
-          className="rounded-2xl border border-gold/25 bg-gold/10 px-4 py-3 text-left transition hover:bg-gold/15"
+          className={`rounded-2xl border px-4 py-3 text-left transition ${
+            youOwe > 0
+              ? "border-rose/25 bg-rose/10 hover:bg-rose/15"
+              : youGet > 0
+                ? "border-mint/25 bg-mint/10 hover:bg-mint/15"
+                : "border-gold/25 bg-gold/10 hover:bg-gold/15"
+          }`}
         >
-          <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Balance</p>
-          <p
-            className={`mt-1 font-display text-lg font-bold ${
-              balance > 0 ? "text-mint" : balance < 0 ? "text-rose" : "text-pearl"
-            }`}
-          >
-            {Math.abs(balance) < 1
-              ? "Settled"
-              : balance > 0
-                ? `+${formatCurrency(balance)}`
-                : formatCurrency(balance)}
-          </p>
+          {youOwe > 0 && youGet > 0 ? (
+            <>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Your dues</p>
+              <p className="mt-1 font-display text-sm font-bold leading-snug">
+                <span className="text-rose">Owe {formatCurrency(youOwe)}</span>
+                <span className="text-muted"> · </span>
+                <span className="text-mint">Get {formatCurrency(youGet)}</span>
+              </p>
+            </>
+          ) : youOwe > 0 ? (
+            <>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">You owe</p>
+              <p className="mt-1 font-display text-lg font-bold text-rose">
+                {formatCurrency(youOwe)}
+              </p>
+            </>
+          ) : youGet > 0 ? (
+            <>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">You get</p>
+              <p className="mt-1 font-display text-lg font-bold text-mint">
+                {formatCurrency(youGet)}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted">Your dues</p>
+              <p className="mt-1 font-display text-lg font-bold text-pearl">Settled</p>
+            </>
+          )}
         </button>
         <button
           type="button"
@@ -204,7 +231,7 @@ export function HomeView({
 
           {recent.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
-              No tabs yet — add one to get started.
+              No tabs yet. Add one to get started.
             </p>
           ) : null}
         </div>

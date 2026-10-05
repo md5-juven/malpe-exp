@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Check, Copy, Phone } from "lucide-react";
+import { ArrowLeft, Check, Copy, Info, Phone } from "lucide-react";
 import type { Expense, Friend, ExpenseSplit, PersonBalance, PersonDues } from "../types";
 import {
   formatCurrency,
   getExpenseOwesBreakdown,
   findSplitAmount,
+  getSplitsForExpense,
+  netBalanceWithPerson,
 } from "../utils/calculations";
 import { Button } from "./ui/Button";
-import { Input, Select } from "./ui/Field";
+import { Input } from "./ui/Field";
+import { MenuSelect } from "./ui/MenuSelect";
+import { useAlert } from "./ui/AlertProvider";
 import { SplitBoard } from "./SplitBoard";
 import { SwipeSend } from "./SwipeSend";
 
@@ -35,7 +39,9 @@ export function SettleView({
   onClearFocus,
   onSaveSplit,
 }: SettleViewProps) {
+  const { alert } = useAlert();
   const [copied, setCopied] = useState<string | null>(null);
+  const [markingPaid, setMarkingPaid] = useState(false);
   const [mode, setMode] = useState<"split" | "dues" | "payments">(
     focusExpenseId ? "split" : "dues"
   );
@@ -117,16 +123,16 @@ export function SettleView({
             className="space-y-4"
           >
             {expenses.length > 1 ? (
-              <Select
+              <MenuSelect
+                label="Tab"
                 value={selected?.id ?? ""}
-                onChange={(e) => setSelectedId(e.target.value)}
-              >
-                {[...expenses].reverse().map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name} · {formatCurrency(e.amount)}
-                  </option>
-                ))}
-              </Select>
+                onChange={setSelectedId}
+                placeholder="Choose a tab"
+                options={[...expenses].reverse().map((e) => ({
+                  value: e.id,
+                  label: `${e.name} · ${formatCurrency(e.amount)}`,
+                }))}
+              />
             ) : null}
 
             {selected ? (
@@ -151,35 +157,107 @@ export function SettleView({
                     )
                     .reduce((s, r) => s + r.owes, 0);
                   const youOwe = youRow?.owes ?? 0;
-                  const payThisTab = dues?.payees.find(
-                    (p) =>
-                      p.name.toLowerCase() === selected.paidBy.toLowerCase() && youOwe > 0
-                  );
+                  const payTo =
+                    selected.paidBy.toLowerCase() !== currentUser.toLowerCase()
+                      ? selected.paidBy
+                      : null;
+                  const netWithPayee = payTo ? netBalanceWithPerson(dues, payTo) : 0;
+                  // Overall they still owe you (or you're even) - don't ask to pay them
+                  const coveredByNet = Boolean(payTo) && netWithPayee >= 0;
 
-                  if (youOwe > 0 && (payThisTab || dues?.payees[0])) {
-                    const target = payThisTab ?? dues!.payees[0];
+                  const markPaid = async () => {
+                    if (!youRow || youOwe <= 0 || markingPaid) return;
+                    setMarkingPaid(true);
+                    try {
+                      const existing = getSplitsForExpense(splits, selected.name);
+                      if (
+                        existing.length === 0 &&
+                        selected.paidBy.toLowerCase() !== currentUser.toLowerCase()
+                      ) {
+                        await onSaveSplit(selected.name, selected.paidBy, selected.amount);
+                      }
+                      await onSaveSplit(selected.name, currentUser, youRow.share);
+                    } catch (err) {
+                      await alert({
+                        title: "Couldn’t clear tab",
+                        message:
+                          err instanceof Error ? err.message : "Something went wrong. Try again.",
+                      });
+                    } finally {
+                      setMarkingPaid(false);
+                    }
+                  };
+
+                  if (youOwe > 0) {
+                    if (coveredByNet && payTo) {
+                      return (
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-mint/25 bg-mint/8 px-4 py-3.5">
+                            <div className="flex gap-2.5">
+                              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-mint/15 text-mint ring-1 ring-inset ring-mint/25">
+                                <Info size={15} strokeWidth={2} />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-pearl">
+                                  No transfer needed with {payTo}
+                                </p>
+                                <p className="mt-1 text-sm leading-relaxed text-muted">
+                                  This tab shows you owe{" "}
+                                  <span className="text-pearl">{formatCurrency(youOwe)}</span>
+                                  {netWithPayee > 0 ? (
+                                    <>
+                                      , but overall {payTo} owes you{" "}
+                                      <span className="text-mint">
+                                        {formatCurrency(netWithPayee)}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      , but overall you’re even with {payTo}
+                                    </>
+                                  )}
+                                  . No money to send. Swipe only to clear this tab’s books.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <SwipeSend
+                            label="Swipe to clear tab"
+                            doneLabel="Tab cleared"
+                            disabled={markingPaid}
+                            onComplete={markPaid}
+                          />
+                        </div>
+                      );
+                    }
+
                     return (
                       <div className="space-y-2">
                         <p className="text-center text-sm text-muted">
                           You still owe{" "}
                           <span className="text-pearl">{formatCurrency(youOwe)}</span> on this
                           tab
-                          {target ? (
+                          {payTo ? (
                             <>
                               {" "}
-                              · pay <span className="text-pearl">{target.name}</span>
+                              · pay <span className="text-pearl">{payTo}</span>
                             </>
                           ) : null}
                         </p>
+                        {payTo && netWithPayee < 0 ? (
+                          <p className="flex items-start justify-center gap-1.5 text-center text-[11px] text-muted/90">
+                            <Info size={12} className="mt-0.5 shrink-0 text-gold" />
+                            <span>
+                              Overall you still owe {payTo}{" "}
+                              {formatCurrency(Math.abs(netWithPayee))} across all tabs.
+                            </span>
+                          </p>
+                        ) : null}
                         <SwipeSend
-                          label="Swipe & Send"
-                          onComplete={() => {
-                            if (target?.phone) {
-                              void navigator.clipboard.writeText(
-                                target.phone.replace(/\s/g, "")
-                              );
-                            }
-                          }}
+                          label="Swipe to settle up"
+                          doneLabel="You're even"
+                          disabled={markingPaid}
+                          onComplete={markPaid}
                         />
                       </div>
                     );
@@ -283,12 +361,14 @@ function DuesPanel({
           <p className="mt-1 font-display text-2xl font-extrabold text-rose">
             {formatCurrency(dues.totalOwes)}
           </p>
+          <p className="mt-1 text-[11px] text-muted">Still to pay others</p>
         </div>
         <div className="rounded-[1.4rem] border border-mint/20 bg-mint/8 p-4">
           <p className="text-[10px] uppercase tracking-[0.14em] text-muted">You get</p>
           <p className="mt-1 font-display text-2xl font-extrabold text-mint">
             {formatCurrency(dues.totalGetsBack)}
           </p>
+          <p className="mt-1 text-[11px] text-muted">Still to collect</p>
         </div>
       </div>
 
@@ -354,7 +434,7 @@ function DuesPanel({
                 }`}
               >
                 {b.balance === 0
-                  ? "—"
+                  ? "-"
                   : b.balance > 0
                     ? `+${formatCurrency(b.balance)}`
                     : formatCurrency(b.balance)}
@@ -447,16 +527,16 @@ function PaymentsPanel({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">Log how much each person already paid.</p>
-      <Select
+      <MenuSelect
+        label="Tab"
         value={expense.id}
-        onChange={(e) => setSelectedId(e.target.value)}
-      >
-        {expenses.map((e) => (
-          <option key={e.id} value={e.id}>
-            {e.name} · {formatCurrency(e.amount)}
-          </option>
-        ))}
-      </Select>
+        onChange={setSelectedId}
+        placeholder="Choose a tab"
+        options={expenses.map((e) => ({
+          value: e.id,
+          label: `${e.name} · ${formatCurrency(e.amount)}`,
+        }))}
+      />
 
       <div className="space-y-3">
         {breakdown.map((row) => (

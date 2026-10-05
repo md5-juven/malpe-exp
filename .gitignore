@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 
-# Env (use GitHub Secrets for CI / Pages — never commit real values)
+# Env (use GitHub Secrets for CI / Pages - never commit real values)
 .env
 .env.*
 !.env.example

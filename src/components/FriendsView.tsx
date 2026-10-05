@@ -148,7 +148,7 @@ function AddFriendModal({
             inputMode="tel"
           />
         </Field>
-        <Field label="Password" hint="Required for login — share with this friend">
+        <Field label="Password" hint="Required for login. Share with this friend">
           <Input
             type="password"
             value={password}

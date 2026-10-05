@@ -53,7 +53,7 @@ export function SplitBoard({ expense, friends, splits, currentUser }: SplitBoard
             const isYou = row.name.toLowerCase() === currentUser.toLowerCase();
             const tone = avatarTone(row.name);
             const settled = row.owes <= 0;
-            // Height maps to how much is still owed — equal shares no longer look identical when you paid
+            // Height maps to how much is still owed - equal shares no longer look identical when you paid
             const height = settled
               ? 14
               : 36 + (row.owes / Math.max(maxOwes, 1)) * 120;
