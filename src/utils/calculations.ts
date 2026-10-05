@@ -341,6 +341,30 @@ export function buildSettleCollectedWrites(
   return writes;
 }
 
+/**
+ * Fully even with one person: clear what you owe them AND what they owe you.
+ * UI shows one net amount; one tap should wipe both directions so they don't reappear.
+ */
+export function buildSettleWithPersonWrites(
+  expenses: Expense[],
+  friends: Friend[],
+  splits: ExpenseSplit[],
+  currentUser: string,
+  otherName: string
+): SplitWrite[] {
+  const writes = [
+    ...buildSettleYouOweWrites(expenses, friends, splits, currentUser, otherName),
+    ...buildSettleCollectedWrites(expenses, friends, splits, currentUser, otherName),
+  ];
+  const seen = new Set<string>();
+  return writes.filter((w) => {
+    const key = `${normalizeKey(w.expenseName)}|${normalizeKey(w.personName)}|${w.amount}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function mergeSubExpensesIntoExpenses(
   expenses: Expense[],
   subExpenses: SubExpense[]

@@ -7,8 +7,7 @@ import {
   getExpenseOwesBreakdown,
   findSplitAmount,
   netBalanceWithPerson,
-  buildSettleYouOweWrites,
-  buildSettleCollectedWrites,
+  buildSettleWithPersonWrites,
   expenseSplitKey,
   type SplitWrite,
 } from "../utils/calculations";
@@ -353,36 +352,44 @@ function DuesPanel({
     }
   };
 
-  const settleYouOwe = async (paidToName?: string) => {
-    const key = paidToName ? `pay-${paidToName}` : "pay-all";
+  /** One person, one net: wipe both directions so they don't flip from Got it → Pay. */
+  const settleWithPerson = async (
+    otherName: string,
+    direction: "owe" | "collect"
+  ) => {
+    const key = `${direction}-${otherName}`;
     if (settlingKey) return;
 
-    const writes = buildSettleYouOweWrites(
+    const writes = buildSettleWithPersonWrites(
       expenses,
       friends,
       splits,
       currentUser,
-      paidToName
+      otherName
     );
     if (writes.length === 0) {
       await alert({
-        title: "Nothing to settle",
-        message: paidToName
-          ? `You’re already clear with ${paidToName} on open tabs.`
-          : "You’re already clear on open tabs.",
+        title: "Already even",
+        message: `You’re already clear with ${otherName}.`,
       });
       return;
     }
 
-    const amountLabel = paidToName
-      ? dues.payees.find((p) => p.name === paidToName)?.amount
-      : dues.totalOwes;
+    const netAmount =
+      direction === "owe"
+        ? dues.payees.find((p) => p.name === otherName)?.amount ?? 0
+        : dues.owedBy.find((p) => p.name === otherName)?.amount ?? 0;
+
     const ok = await confirm({
-      title: paidToName ? `Settle with ${paidToName}?` : "Settle all you owe?",
-      message: paidToName
-        ? `This only clears what you still owe ${paidToName} (${formatCurrency(amountLabel ?? 0)}) on tabs they paid. It does not change what they may owe you on tabs you paid.`
-        : `This only clears what you still owe others (${formatCurrency(amountLabel ?? 0)}). Money others owe you on your tabs stays open until you tap Got it.`,
-      confirmLabel: "Settle now",
+      title:
+        direction === "owe"
+          ? `Settle with ${otherName}?`
+          : `Clear up with ${otherName}?`,
+      message:
+        direction === "owe"
+          ? `Net you owe ${otherName} ${formatCurrency(netAmount)}. This clears every open share between you two so you’re fully even — they won’t ask you to settle again.`
+          : `Net ${otherName} owes you ${formatCurrency(netAmount)}. This clears every open share between you two so you’re fully even — no reverse Settle after this.`,
+      confirmLabel: direction === "owe" ? "Settle now" : "Mark even",
       cancelLabel: "Not yet",
     });
     if (!ok) return;
@@ -390,21 +397,19 @@ function DuesPanel({
     setSettlingKey(key);
     try {
       await applyWrites(writes);
-      if (paidToName) {
-        const phone = dues.payees.find((p) => p.name === paidToName)?.phone;
-        if (phone) {
-          try {
-            await navigator.clipboard.writeText(phone.replace(/\s/g, ""));
-          } catch {
-            // clipboard optional
-          }
+      const phone =
+        dues.payees.find((p) => p.name === otherName)?.phone ||
+        dues.owedBy.find((p) => p.name === otherName)?.phone;
+      if (direction === "owe" && phone) {
+        try {
+          await navigator.clipboard.writeText(phone.replace(/\s/g, ""));
+        } catch {
+          // clipboard optional
         }
       }
       await alert({
-        title: "Settled",
-        message: paidToName
-          ? `You’re clear on what you owed ${paidToName}. If they still owe you on other tabs, that stays under You get.`
-          : "Your open Pay amounts are cleared. Amounts others owe you are unchanged.",
+        title: "You're even",
+        message: `All open tabs with ${otherName} are cleared both ways.`,
       });
     } catch (err) {
       await alert({
@@ -416,45 +421,53 @@ function DuesPanel({
     }
   };
 
-  const settleCollected = async (debtorName: string) => {
-    const key = `get-${debtorName}`;
+  const settleAllYouOwe = async () => {
     if (settlingKey) return;
-
-    const writes = buildSettleCollectedWrites(
-      expenses,
-      friends,
-      splits,
-      currentUser,
-      debtorName
-    );
-    if (writes.length === 0) {
+    if (dues.payees.length === 0) {
       await alert({
-        title: "Nothing to clear",
-        message: `${debtorName} is already clear on your tabs.`,
+        title: "Nothing to settle",
+        message: "You’re already clear on what you owe.",
       });
       return;
     }
 
-    const amount =
-      dues.owedBy.find((p) => p.name === debtorName)?.amount ?? 0;
     const ok = await confirm({
-      title: `Mark ${debtorName} paid?`,
-      message: `Clear ${formatCurrency(amount)} that ${debtorName} owes you across your tabs.`,
-      confirmLabel: "Mark paid",
+      title: "Settle all you owe?",
+      message: `Clears ${formatCurrency(dues.totalOwes)} net that you owe. For each person, both directions are wiped so you’re fully even with them.`,
+      confirmLabel: "Settle now",
       cancelLabel: "Not yet",
     });
     if (!ok) return;
 
-    setSettlingKey(key);
+    setSettlingKey("pay-all");
     try {
-      await applyWrites(writes);
+      const allWrites: SplitWrite[] = [];
+      for (const p of dues.payees) {
+        allWrites.push(
+          ...buildSettleWithPersonWrites(
+            expenses,
+            friends,
+            splits,
+            currentUser,
+            p.name
+          )
+        );
+      }
+      const seen = new Set<string>();
+      const unique = allWrites.filter((w) => {
+        const key = `${w.expenseName}|${w.personName}|${w.amount}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      await applyWrites(unique);
       await alert({
-        title: "Marked paid",
-        message: `${debtorName} is clear on your open tabs.`,
+        title: "Settled",
+        message: "Everyone you owed is fully even with you now.",
       });
     } catch (err) {
       await alert({
-        title: "Couldn’t update",
+        title: "Couldn’t settle",
         message: err instanceof Error ? err.message : "Try again in a moment.",
       });
     } finally {
@@ -487,10 +500,10 @@ function DuesPanel({
             label={`Settle all · ${formatCurrency(dues.totalOwes)}`}
             doneLabel="All settled"
             disabled={Boolean(settlingKey)}
-            onComplete={() => settleYouOwe()}
+            onComplete={() => settleAllYouOwe()}
           />
           <p className="text-center text-[11px] text-muted">
-            Clears only what you owe. Doesn’t mark others as paid to you.
+            Amounts are already netted per person. One settle makes you fully even.
           </p>
         </div>
       ) : null}
@@ -503,11 +516,11 @@ function DuesPanel({
           amount={p.amount}
           tone="owe"
           copied={copied === `pay-${p.name}`}
-          settling={settlingKey === `pay-${p.name}`}
+          settling={settlingKey === `owe-${p.name}` || settlingKey === `pay-${p.name}`}
           settleLabel="Settle"
-          hint="Only clears what you owe them"
+          hint="Net after minus · fully even after settle"
           onCopy={() => onCopy(p.phone, `pay-${p.name}`)}
-          onSettle={() => settleYouOwe(p.name)}
+          onSettle={() => settleWithPerson(p.name, "owe")}
         />
       ))}
 
@@ -519,11 +532,11 @@ function DuesPanel({
           amount={p.amount}
           tone="collect"
           copied={copied === `get-${p.name}`}
-          settling={settlingKey === `get-${p.name}`}
-          settleLabel="Got it"
-          hint="Only clears what they owe you"
+          settling={settlingKey === `collect-${p.name}` || settlingKey === `get-${p.name}`}
+          settleLabel="Mark even"
+          hint="Net after minus · fully even · no reverse settle"
           onCopy={() => onCopy(p.phone, `get-${p.name}`)}
-          onSettle={() => settleCollected(p.name)}
+          onSettle={() => settleWithPerson(p.name, "collect")}
         />
       ))}
 
