@@ -1,0 +1,86 @@
+import { motion } from "framer-motion";
+import type { Expense, Friend, ExpenseSplit } from "../types";
+import {
+  formatCurrency,
+  getExpenseOwesBreakdown,
+  initials,
+} from "../utils/calculations";
+import { avatarTone, getExpenseVisual } from "../utils/expenseVisual";
+
+interface SplitBoardProps {
+  expense: Expense;
+  friends: Friend[];
+  splits: ExpenseSplit[];
+  currentUser: string;
+}
+
+export function SplitBoard({ expense, friends, splits, currentUser }: SplitBoardProps) {
+  const breakdown = getExpenseOwesBreakdown(expense, friends, splits);
+  const visual = getExpenseVisual(expense.name);
+  const maxShare = Math.max(...breakdown.map((b) => b.share), 1);
+
+  return (
+    <div className="rounded-[2rem] border border-border bg-surface/70">
+      <div className={`relative overflow-hidden rounded-t-[2rem] bg-gradient-to-br ${visual.gradient} px-5 pb-6 pt-6`}>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface/70 to-transparent" />
+        <p className="relative text-xs uppercase tracking-[0.18em] text-pearl/60">Total bill</p>
+        <p className="relative mt-1 font-display text-4xl font-extrabold tracking-tight text-pearl">
+          {formatCurrency(expense.amount)}
+        </p>
+        <p className="relative mt-1 text-sm text-pearl/70">{expense.name}</p>
+      </div>
+
+      <div className="relative z-10 -mt-1 px-3 pb-5 pt-5">
+        <div className="no-scrollbar flex items-end justify-between gap-1 overflow-x-auto">
+          {breakdown.map((row, i) => {
+            const height = 48 + (row.share / maxShare) * 110;
+            const isYou = row.name.toLowerCase() === currentUser.toLowerCase();
+            const tone = avatarTone(row.name);
+
+            return (
+              <motion.div
+                key={row.name}
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.04 * i, type: "spring", stiffness: 260, damping: 22 }}
+                className="flex min-w-[3.4rem] flex-1 flex-col items-center"
+              >
+                <div
+                  className={`mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br font-display text-xs font-bold ring-2 ${
+                    isYou ? "ring-gold" : "ring-transparent"
+                  } ${tone}`}
+                >
+                  {initials(row.name)}
+                </div>
+                <p className="mb-2 max-w-[4.2rem] truncate text-center text-[11px] font-medium text-muted">
+                  {isYou ? "You" : row.name.split(" ")[0]}
+                </p>
+
+                <div className="relative flex h-40 w-full flex-col items-center justify-end">
+                  <div className="absolute inset-y-2 w-px bg-border-strong/60" />
+                  <motion.div
+                    className="relative z-10 w-full rounded-full bg-gradient-to-t from-gold/80 to-gold/20"
+                    initial={{ height: 0 }}
+                    animate={{ height }}
+                    transition={{ delay: 0.1 + i * 0.05, type: "spring", stiffness: 180, damping: 18 }}
+                    style={{ maxWidth: 10, marginInline: "auto" }}
+                  >
+                    <span className="absolute -top-2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-2 border-ink bg-pearl shadow" />
+                  </motion.div>
+                </div>
+
+                <p
+                  className={`mt-2 font-display text-xs font-bold ${
+                    row.owes > 0 ? "text-rose" : "text-mint"
+                  }`}
+                >
+                  {formatCurrency(row.share)}
+                </p>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
