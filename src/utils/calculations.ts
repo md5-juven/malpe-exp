@@ -28,23 +28,27 @@ export function normalizeExpenseDate(value: string | undefined | null): string {
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
-    // Google Sheets sometimes returns "M/D/YYYY"
-    const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (slash) {
-      const [, m, d, y] = slash;
-      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-    }
-    return raw;
+  // Google Sheets sometimes returns "M/D/YYYY"
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const [, m, d, y] = slash;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
 
-  // Use UTC calendar day for pure ISO midnight timestamps from Sheets
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  // Sheets date-only cells serialize as UTC (e.g. 1 Oct IST → 2026-09-30T18:30:00.000Z).
+  // Read the calendar day in Asia/Kolkata so the UI matches the sheet.
   if (/T/.test(raw) || /Z$/i.test(raw)) {
-    const y = parsed.getUTCFullYear();
-    const m = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(parsed.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
+    return (
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(parsed)
+    );
   }
 
   const y = parsed.getFullYear();

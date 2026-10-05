@@ -24,28 +24,45 @@ function getFriendsSheet(ss) {
   return ss.getSheetByName(FRIENDS_SHEET) || ss.getSheetByName(FRIENDS_FALLBACK);
 }
 
+/** Turn Date cells into yyyy-MM-dd so JSON doesn't shift the calendar day via UTC. */
+function serializeRows(values) {
+  const tz = Session.getScriptTimeZone() || "Asia/Kolkata";
+  return values.map(function (row) {
+    return row.map(function (cell) {
+      if (Object.prototype.toString.call(cell) === "[object Date]" && !isNaN(cell.getTime())) {
+        return Utilities.formatDate(cell, tz, "yyyy-MM-dd");
+      }
+      return cell;
+    });
+  });
+}
+
 function doGet(e) {
   const action = e.parameter.action;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   if (action === "expenses") {
     const sheet = ss.getSheetByName(EXPENSES_SHEET);
-    return jsonResponse({ rows: sheet ? sheet.getDataRange().getValues() : [] });
+    const rows = sheet ? serializeRows(sheet.getDataRange().getValues()) : [];
+    return jsonResponse({ rows: rows });
   }
 
   if (action === "friends" || action === "travellers") {
     const sheet = getFriendsSheet(ss);
-    return jsonResponse({ rows: sheet ? sheet.getDataRange().getValues() : [] });
+    const rows = sheet ? serializeRows(sheet.getDataRange().getValues()) : [];
+    return jsonResponse({ rows: rows });
   }
 
   if (action === "splits") {
     const sheet = ss.getSheetByName(SPLITS_SHEET);
-    return jsonResponse({ rows: sheet ? sheet.getDataRange().getValues() : [] });
+    const rows = sheet ? serializeRows(sheet.getDataRange().getValues()) : [];
+    return jsonResponse({ rows: rows });
   }
 
   if (action === "subExpenses") {
     const sheet = ss.getSheetByName(SUB_EXPENSES_SHEET);
-    return jsonResponse({ rows: sheet ? sheet.getDataRange().getValues() : [] });
+    const rows = sheet ? serializeRows(sheet.getDataRange().getValues()) : [];
+    return jsonResponse({ rows: rows });
   }
 
   if (action === "verifyUser") {
