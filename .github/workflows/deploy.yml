@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Needed so Environment secrets (Settings → Environments → production) are available
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
           VITE_GOOGLE_SCRIPT_URL: ${{ secrets.VITE_GOOGLE_SCRIPT_URL }}
         run: |
           if [ -z "${VITE_GOOGLE_SCRIPT_URL}" ]; then
-            echo "::error::Missing repository secret VITE_GOOGLE_SCRIPT_URL. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+            echo "::error::Missing secret VITE_GOOGLE_SCRIPT_URL. Add it under Settings → Secrets and variables → Actions as a Repository secret, or under Environments → production, then re-run this workflow."
             exit 1
           fi
           echo "Sheets script URL is configured (${#VITE_GOOGLE_SCRIPT_URL} chars)."
