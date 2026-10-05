@@ -404,18 +404,13 @@ export async function addExpense(
     throw new Error("Google Script URL not configured.");
   }
 
-  await fetch(SHEETS_CONFIG.scriptUrl, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "addExpense",
-      name,
-      amount,
-      paidBy,
-      date,
-      participants: formatParticipantsList(participants),
-    }),
+  await getViaScript({
+    action: "addExpense",
+    name,
+    amount: String(amount),
+    paidBy,
+    date,
+    participants: formatParticipantsList(participants),
   });
 }
 
@@ -453,11 +448,11 @@ export async function saveSplit(
 ): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
 
-  await fetch(SHEETS_CONFIG.scriptUrl, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "saveSplit", expenseName, personName, amount }),
+  await getViaScript({
+    action: "saveSplit",
+    expenseName,
+    personName,
+    amount: String(amount),
   });
 }
 
@@ -485,11 +480,11 @@ export async function deleteSubExpense(sheetRow: number): Promise<void> {
 export async function addFriend(name: string, phone: string, password = ""): Promise<void> {
   if (!SHEETS_CONFIG.scriptUrl) throw new Error("Google Script URL not configured.");
 
-  await fetch(SHEETS_CONFIG.scriptUrl, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "addFriend", name, phone, password }),
+  await getViaScript({
+    action: "addFriend",
+    name,
+    phone,
+    password,
   });
 }
 

@@ -550,9 +550,14 @@ function PaymentRow({
   suggested: number;
   onSave: (expenseName: string, personName: string, amount: number) => Promise<void>;
 }) {
+  const { alert } = useAlert();
   const [value, setValue] = useState(String(current ?? suggested ?? ""));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setValue(String(current ?? suggested ?? ""));
+  }, [current, suggested, expenseName, personName]);
 
   return (
     <div className="rounded-[1.4rem] border border-border bg-surface/50 p-3">
@@ -571,12 +576,19 @@ function PaymentRow({
         <Button
           size="md"
           loading={saving}
+          disabled={saving}
           onClick={async () => {
             setSaving(true);
             try {
               await onSave(expenseName, personName, Number(value) || 0);
               setSaved(true);
               window.setTimeout(() => setSaved(false), 1200);
+            } catch (err) {
+              await alert({
+                title: "Couldn't save",
+                message: err instanceof Error ? err.message : "Try again in a moment.",
+                confirmLabel: "OK",
+              });
             } finally {
               setSaving(false);
             }

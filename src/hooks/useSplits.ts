@@ -6,7 +6,28 @@ import {
   getCachedBootstrap,
   invalidateBootstrapCache,
 } from "../services/sheets";
+import { writeSheetCache } from "../services/cache";
 import { isSheetsConfigured } from "../config";
+
+function nextSplits(
+  prev: ExpenseSplit[],
+  expenseName: string,
+  personName: string,
+  amount: number
+): ExpenseSplit[] {
+  const idx = prev.findIndex(
+    (s) =>
+      s.expenseName.toLowerCase() === expenseName.toLowerCase() &&
+      s.personName.toLowerCase() === personName.toLowerCase()
+  );
+  if (amount <= 0) {
+    return idx >= 0 ? prev.filter((_, i) => i !== idx) : prev;
+  }
+  if (idx >= 0) {
+    return prev.map((s, i) => (i === idx ? { ...s, amount } : s));
+  }
+  return [...prev, { id: `split-local-${Date.now()}`, expenseName, personName, amount }];
+}
 
 export function useSplits() {
   const hadCacheRef = useRef(Boolean(getCachedBootstrap()));
@@ -35,26 +56,25 @@ export function useSplits() {
 
   const saveSplit = useCallback(
     async (expenseName: string, personName: string, amount: number) => {
+      if (isSheetsConfigured()) {
+        await saveSplitToSheet(expenseName, personName, amount);
+      }
+
       setSplits((prev) => {
-        const idx = prev.findIndex(
-          (s) =>
-            s.expenseName.toLowerCase() === expenseName.toLowerCase() &&
-            s.personName.toLowerCase() === personName.toLowerCase()
-        );
-        if (amount <= 0) {
-          return idx >= 0 ? prev.filter((_, i) => i !== idx) : prev;
+        const updated = nextSplits(prev, expenseName, personName, amount);
+        const cached = getCachedBootstrap();
+        if (cached) {
+          writeSheetCache({
+            friends: cached.friends,
+            expenses: cached.expenses,
+            splits: updated,
+            subExpenses: cached.subExpenses,
+          });
         }
-        if (idx >= 0) {
-          return prev.map((s, i) => (i === idx ? { ...s, amount } : s));
-        }
-        return [
-          ...prev,
-          { id: `split-local-${Date.now()}`, expenseName, personName, amount },
-        ];
+        return updated;
       });
 
       if (isSheetsConfigured()) {
-        await saveSplitToSheet(expenseName, personName, amount);
         invalidateBootstrapCache();
       }
     },

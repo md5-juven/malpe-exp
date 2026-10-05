@@ -158,6 +158,41 @@ function doGet(e) {
     return jsonResponse({ success: true });
   }
 
+  if (action === "saveSplit") {
+    return jsonResponse(
+      upsertSplit(
+        ss,
+        String(e.parameter.expenseName || "").trim(),
+        String(e.parameter.personName || "").trim(),
+        Number(e.parameter.amount)
+      )
+    );
+  }
+
+  if (action === "addExpense") {
+    return jsonResponse(
+      appendExpense(
+        ss,
+        String(e.parameter.name || "").trim(),
+        Number(e.parameter.amount),
+        String(e.parameter.paidBy || "").trim(),
+        String(e.parameter.date || "").trim(),
+        String(e.parameter.participants || "").trim()
+      )
+    );
+  }
+
+  if (action === "addFriend") {
+    return jsonResponse(
+      appendFriend(
+        ss,
+        String(e.parameter.name || "").trim(),
+        String(e.parameter.phone || "").trim(),
+        String(e.parameter.password || "").trim()
+      )
+    );
+  }
+
   return jsonResponse({ error: "Invalid action" });
 }
 
@@ -166,61 +201,38 @@ function doPost(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   if (data.action === "addExpense") {
-    let sheet = ss.getSheetByName(EXPENSES_SHEET);
-    if (!sheet) {
-      sheet = ss.insertSheet(EXPENSES_SHEET);
-      sheet.appendRow(["Name", "Amount", "Paid By", "Date", "Participants"]);
-    }
-    sheet.appendRow([
-      data.name,
-      data.amount,
-      data.paidBy,
-      data.date || new Date().toISOString().split("T")[0],
-      String(data.participants || "").trim(),
-    ]);
-    return jsonResponse({ success: true });
+    return jsonResponse(
+      appendExpense(
+        ss,
+        String(data.name || "").trim(),
+        Number(data.amount),
+        String(data.paidBy || "").trim(),
+        String(data.date || "").trim(),
+        String(data.participants || "").trim()
+      )
+    );
   }
 
   if (data.action === "addFriend") {
-    let sheet = getFriendsSheet(ss);
-    if (!sheet) {
-      sheet = ss.insertSheet(FRIENDS_SHEET);
-      sheet.appendRow(["Name", "Phone", "Password"]);
-    }
-    sheet.appendRow([
-      String(data.name || "").trim(),
-      String(data.phone || "").trim(),
-      String(data.password || "").trim(),
-    ]);
-    return jsonResponse({ success: true });
+    return jsonResponse(
+      appendFriend(
+        ss,
+        String(data.name || "").trim(),
+        String(data.phone || "").trim(),
+        String(data.password || "").trim()
+      )
+    );
   }
 
   if (data.action === "saveSplit") {
-    let sheet = ss.getSheetByName(SPLITS_SHEET);
-    if (!sheet) {
-      sheet = ss.insertSheet(SPLITS_SHEET);
-      sheet.appendRow(["Expense", "Person", "Amount"]);
-    }
-
-    const rows = sheet.getDataRange().getValues();
-    const expenseName = String(data.expenseName).trim();
-    const personName = String(data.personName).trim();
-    const amount = Number(data.amount);
-    let found = false;
-
-    for (let i = 1; i < rows.length; i++) {
-      const rowExpense = String(rows[i][0]).trim().toLowerCase();
-      const rowPerson = String(rows[i][1]).trim().toLowerCase();
-      if (rowExpense === expenseName.toLowerCase() && rowPerson === personName.toLowerCase()) {
-        if (amount <= 0) sheet.deleteRow(i + 1);
-        else sheet.getRange(i + 1, 3).setValue(amount);
-        found = true;
-        break;
-      }
-    }
-
-    if (!found && amount > 0) sheet.appendRow([expenseName, personName, amount]);
-    return jsonResponse({ success: true });
+    return jsonResponse(
+      upsertSplit(
+        ss,
+        String(data.expenseName || "").trim(),
+        String(data.personName || "").trim(),
+        Number(data.amount)
+      )
+    );
   }
 
   if (data.action === "verifyUser") {
@@ -233,6 +245,63 @@ function doPost(e) {
   }
 
   return jsonResponse({ error: "Invalid action" });
+}
+
+function appendExpense(ss, name, amount, paidBy, date, participants) {
+  if (!name) return { error: "Expense name is required" };
+  if (!amount || amount <= 0) return { error: "Invalid amount" };
+  let sheet = ss.getSheetByName(EXPENSES_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(EXPENSES_SHEET);
+    sheet.appendRow(["Name", "Amount", "Paid By", "Date", "Participants"]);
+  }
+  sheet.appendRow([
+    name,
+    amount,
+    paidBy,
+    date || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Kolkata", "yyyy-MM-dd"),
+    participants,
+  ]);
+  return { success: true };
+}
+
+function appendFriend(ss, name, phone, password) {
+  if (!name) return { error: "Name is required" };
+  let sheet = getFriendsSheet(ss);
+  if (!sheet) {
+    sheet = ss.insertSheet(FRIENDS_SHEET);
+    sheet.appendRow(["Name", "Phone", "Password"]);
+  }
+  sheet.appendRow([name, phone, password]);
+  return { success: true };
+}
+
+function upsertSplit(ss, expenseName, personName, amount) {
+  if (!expenseName || !personName) return { error: "Expense and person are required" };
+  if (Number.isNaN(amount)) return { error: "Invalid amount" };
+
+  let sheet = ss.getSheetByName(SPLITS_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SPLITS_SHEET);
+    sheet.appendRow(["Expense", "Person", "Amount"]);
+  }
+
+  const rows = sheet.getDataRange().getValues();
+  const expenseKey = expenseName.toLowerCase();
+  const personKey = personName.toLowerCase();
+
+  for (let i = 1; i < rows.length; i++) {
+    const rowExpense = String(rows[i][0]).trim().toLowerCase();
+    const rowPerson = String(rows[i][1]).trim().toLowerCase();
+    if (rowExpense === expenseKey && rowPerson === personKey) {
+      if (amount <= 0) sheet.deleteRow(i + 1);
+      else sheet.getRange(i + 1, 3).setValue(amount);
+      return { success: true };
+    }
+  }
+
+  if (amount > 0) sheet.appendRow([expenseName, personName, amount]);
+  return { success: true };
 }
 
 function cellPassword(value) {
