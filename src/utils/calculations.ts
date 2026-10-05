@@ -172,16 +172,46 @@ function netSettlements(
   return { payees: netPayees, owedBy: netOwedBy };
 }
 
+/** Unique split key so two tabs named "Fuel" don't share payment rows. */
+export function expenseSplitKey(expense: Pick<Expense, "name" | "sheetRow">): string {
+  return `${expense.name}::row${expense.sheetRow}`;
+}
+
+function splitBelongsToExpense(
+  splitExpenseName: string,
+  expense: Pick<Expense, "name" | "sheetRow">
+): boolean {
+  const keyed = expenseSplitKey(expense);
+  if (splitExpenseName === keyed) return true;
+  // Legacy rows used the bare tab name — never apply those once a keyed row exists elsewhere
+  if (splitExpenseName.includes("::row")) return false;
+  return normalizeKey(splitExpenseName) === normalizeKey(expense.name);
+}
+
 export function findSplitAmount(
   splits: ExpenseSplit[],
-  expenseName: string,
+  expense: Pick<Expense, "name" | "sheetRow"> | string,
   personName: string
 ): number | undefined {
-  const expenseKey = normalizeKey(expenseName);
   const personKey = normalizeKey(personName);
+  const expenseRef =
+    typeof expense === "string" ? { name: expense, sheetRow: -1 } : expense;
+
+  // Prefer keyed rows for this tab
+  if (typeof expense !== "string") {
+    const keyed = expenseSplitKey(expense);
+    const keyedHit = splits.find(
+      (s) =>
+        s.expenseName === keyed && normalizeKey(s.personName) === personKey
+    );
+    if (keyedHit) return keyedHit.amount;
+  }
+
+  // Legacy bare-name rows (sheetRow -1 means name-only lookup)
   return splits.find(
     (s) =>
-      normalizeKey(s.expenseName) === expenseKey &&
+      !s.expenseName.includes("::row") &&
+      normalizeKey(s.expenseName) === normalizeKey(expenseRef.name) &&
       normalizeKey(s.personName) === personKey
   )?.amount;
 }
@@ -201,9 +231,24 @@ export function netBalanceWithPerson(
   return theyOweYou - youOweThem;
 }
 
-export function getSplitsForExpense(splits: ExpenseSplit[], expenseName: string): ExpenseSplit[] {
-  const expenseKey = normalizeKey(expenseName);
-  return splits.filter((s) => normalizeKey(s.expenseName) === expenseKey);
+export function getSplitsForExpense(
+  splits: ExpenseSplit[],
+  expense: Pick<Expense, "name" | "sheetRow"> | string
+): ExpenseSplit[] {
+  if (typeof expense === "string") {
+    return splits.filter(
+      (s) =>
+        normalizeKey(s.expenseName) === normalizeKey(expense) ||
+        s.expenseName.startsWith(`${expense}::row`)
+    );
+  }
+
+  const keyed = expenseSplitKey(expense);
+  const keyedRows = splits.filter((s) => s.expenseName === keyed);
+  if (keyedRows.length > 0) return keyedRows;
+
+  // Legacy bare-name rows only — keyed rows for other sheet rows are ignored
+  return splits.filter((s) => splitBelongsToExpense(s.expenseName, expense));
 }
 
 export interface SplitWrite {
@@ -215,6 +260,7 @@ export interface SplitWrite {
 /**
  * Builds the split writes needed so `currentUser` no longer owes on open tabs.
  * Optionally limit to tabs paid by `paidToName`.
+ * Only records the current user's paid share (keyed per tab row) — does not touch what others owe.
  */
 export function buildSettleYouOweWrites(
   expenses: Expense[],
@@ -246,19 +292,9 @@ export function buildSettleYouOweWrites(
     );
     if (!youRow || youRow.owes <= 0) continue;
 
-    const existing = getSplitsForExpense(splits, expense.name);
-    if (
-      existing.length === 0 &&
-      normalizeKey(expense.paidBy) !== normalizeKey(currentUser)
-    ) {
-      push({
-        expenseName: expense.name,
-        personName: expense.paidBy,
-        amount: expense.amount,
-      });
-    }
+    // Mark only your share paid on this exact tab — never rewrite the whole bill
     push({
-      expenseName: expense.name,
+      expenseName: expenseSplitKey(expense),
       personName: currentUser,
       amount: youRow.share,
     });
@@ -295,16 +331,8 @@ export function buildSettleCollectedWrites(
     );
     if (!debtorRow || debtorRow.owes <= 0) continue;
 
-    const existing = getSplitsForExpense(splits, expense.name);
-    if (existing.length === 0) {
-      push({
-        expenseName: expense.name,
-        personName: currentUser,
-        amount: expense.amount,
-      });
-    }
     push({
-      expenseName: expense.name,
+      expenseName: expenseSplitKey(expense),
       personName: debtorName,
       amount: debtorRow.share,
     });
@@ -346,6 +374,8 @@ export function calculateBalances(
   const shareMap = new Map<string, number>();
   const paidMap = new Map<string, number>();
 
+  const usedLegacySplitIds = new Set<string>();
+
   for (const expense of expenses) {
     if (expense.subExpenses?.length) {
       for (const sub of expense.subExpenses) {
@@ -365,11 +395,26 @@ export function calculateBalances(
       }
     }
 
-    const expenseSplits = getSplitsForExpense(splits, expense.name);
+    // Prefer per-tab keyed splits; consume legacy name-only rows at most once
+    const expenseSplits = getSplitsForExpense(splits, expense).filter((split) => {
+      if (split.expenseName.includes("::row")) return true;
+      if (usedLegacySplitIds.has(split.id)) return false;
+      usedLegacySplitIds.add(split.id);
+      return true;
+    });
+
     if (expenseSplits.length > 0) {
       for (const split of expenseSplits) {
         const personKey = normalizeKey(split.personName);
         paidMap.set(personKey, (paidMap.get(personKey) ?? 0) + split.amount);
+      }
+      // Payer keeps full credit if they have no explicit split row on this tab
+      const payerKey = normalizeKey(expense.paidBy);
+      const payerLogged = expenseSplits.some(
+        (s) => normalizeKey(s.personName) === payerKey
+      );
+      if (!payerLogged) {
+        paidMap.set(payerKey, (paidMap.get(payerKey) ?? 0) + expense.amount);
       }
     } else {
       const k = normalizeKey(expense.paidBy);
@@ -404,12 +449,33 @@ export function getTotalPaidBy(personName: string, expenses: Expense[]): number 
   return getExpensesPaidBy(personName, expenses).reduce((sum, e) => sum + e.amount, 0);
 }
 
+function paidTowardShare(
+  expense: Expense,
+  friendName: string,
+  splits: ExpenseSplit[],
+  hasSplits: boolean
+): number {
+  const explicit = findSplitAmount(splits, expense, friendName);
+  if (explicit !== undefined) return explicit;
+  // Keep the payer's full credit even when others have logged partial payments
+  if (
+    hasSplits &&
+    normalizeKey(friendName) === normalizeKey(expense.paidBy)
+  ) {
+    return expense.amount;
+  }
+  if (!hasSplits && normalizeKey(friendName) === normalizeKey(expense.paidBy)) {
+    return expense.amount;
+  }
+  return 0;
+}
+
 export function getExpenseOwesBreakdown(
   expense: Expense,
   friends: Friend[],
   splits: ExpenseSplit[]
 ): ExpensePersonOwes[] {
-  const expenseSplits = getSplitsForExpense(splits, expense.name);
+  const expenseSplits = getSplitsForExpense(splits, expense);
   const hasSplits = expenseSplits.length > 0;
   const hasSubs = Boolean(expense.subExpenses?.length);
 
@@ -432,12 +498,7 @@ export function getExpenseOwesBreakdown(
       .map((friend) => {
         const k = normalizeKey(friend.name);
         const roundedShare = Math.round(shareMap.get(k) ?? 0);
-        let paid = 0;
-        if (hasSplits) {
-          paid = findSplitAmount(splits, expense.name, friend.name) ?? 0;
-        } else if (k === normalizeKey(expense.paidBy)) {
-          paid = expense.amount;
-        }
+        const paid = paidTowardShare(expense, friend.name, splits, hasSplits);
         return {
           name: friend.name,
           share: roundedShare,
@@ -451,12 +512,7 @@ export function getExpenseOwesBreakdown(
   const roundedShare = Math.round(expense.amount / (participants.length || 1));
 
   return participants.map((friend) => {
-    let paid = 0;
-    if (hasSplits) {
-      paid = findSplitAmount(splits, expense.name, friend.name) ?? 0;
-    } else if (normalizeKey(friend.name) === normalizeKey(expense.paidBy)) {
-      paid = expense.amount;
-    }
+    const paid = paidTowardShare(expense, friend.name, splits, hasSplits);
     return {
       name: friend.name,
       share: roundedShare,

@@ -84,8 +84,12 @@ export function useSplits() {
   );
 
   const removeSplitsForExpense = useCallback((expenseName: string) => {
+    const base = expenseName.toLowerCase();
     setSplits((prev) =>
-      prev.filter((s) => s.expenseName.toLowerCase() !== expenseName.toLowerCase())
+      prev.filter((s) => {
+        const key = s.expenseName.toLowerCase();
+        return key !== base && !key.startsWith(`${base}::row`);
+      })
     );
   }, []);
 

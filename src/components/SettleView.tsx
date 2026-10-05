@@ -6,10 +6,10 @@ import {
   formatCurrency,
   getExpenseOwesBreakdown,
   findSplitAmount,
-  getSplitsForExpense,
   netBalanceWithPerson,
   buildSettleYouOweWrites,
   buildSettleCollectedWrites,
+  expenseSplitKey,
   type SplitWrite,
 } from "../utils/calculations";
 import { Button } from "./ui/Button";
@@ -165,14 +165,12 @@ export function SettleView({
                     if (!youRow || youOwe <= 0 || markingPaid) return;
                     setMarkingPaid(true);
                     try {
-                      const existing = getSplitsForExpense(splits, selected.name);
-                      if (
-                        existing.length === 0 &&
-                        selected.paidBy.toLowerCase() !== currentUser.toLowerCase()
-                      ) {
-                        await onSaveSplit(selected.name, selected.paidBy, selected.amount);
-                      }
-                      await onSaveSplit(selected.name, currentUser, youRow.share);
+                      // Only mark your share on this exact tab row
+                      await onSaveSplit(
+                        expenseSplitKey(selected),
+                        currentUser,
+                        youRow.share
+                      );
                     } catch (err) {
                       await alert({
                         title: "Couldn’t clear tab",
@@ -382,8 +380,8 @@ function DuesPanel({
     const ok = await confirm({
       title: paidToName ? `Settle with ${paidToName}?` : "Settle all you owe?",
       message: paidToName
-        ? `Mark ${formatCurrency(amountLabel ?? 0)} as paid to ${paidToName} across all open tabs. Pay buttons on Tabs will clear.`
-        : `Mark ${formatCurrency(amountLabel ?? 0)} as paid across all open tabs. Pay buttons on Tabs will update to View split.`,
+        ? `This only clears what you still owe ${paidToName} (${formatCurrency(amountLabel ?? 0)}) on tabs they paid. It does not change what they may owe you on tabs you paid.`
+        : `This only clears what you still owe others (${formatCurrency(amountLabel ?? 0)}). Money others owe you on your tabs stays open until you tap Got it.`,
       confirmLabel: "Settle now",
       cancelLabel: "Not yet",
     });
@@ -405,8 +403,8 @@ function DuesPanel({
       await alert({
         title: "Settled",
         message: paidToName
-          ? `You’re clear with ${paidToName}. Tabs Pay buttons are updated.`
-          : "All your open dues are cleared. Tabs Pay buttons are updated.",
+          ? `You’re clear on what you owed ${paidToName}. If they still owe you on other tabs, that stays under You get.`
+          : "Your open Pay amounts are cleared. Amounts others owe you are unchanged.",
       });
     } catch (err) {
       await alert({
@@ -492,7 +490,7 @@ function DuesPanel({
             onComplete={() => settleYouOwe()}
           />
           <p className="text-center text-[11px] text-muted">
-            Clears every open Pay amount on Tabs in one go
+            Clears only what you owe. Doesn’t mark others as paid to you.
           </p>
         </div>
       ) : null}
@@ -507,6 +505,7 @@ function DuesPanel({
           copied={copied === `pay-${p.name}`}
           settling={settlingKey === `pay-${p.name}`}
           settleLabel="Settle"
+          hint="Only clears what you owe them"
           onCopy={() => onCopy(p.phone, `pay-${p.name}`)}
           onSettle={() => settleYouOwe(p.name)}
         />
@@ -522,6 +521,7 @@ function DuesPanel({
           copied={copied === `get-${p.name}`}
           settling={settlingKey === `get-${p.name}`}
           settleLabel="Got it"
+          hint="Only clears what they owe you"
           onCopy={() => onCopy(p.phone, `get-${p.name}`)}
           onSettle={() => settleCollected(p.name)}
         />
@@ -575,6 +575,7 @@ function SettlementRow({
   copied,
   settling,
   settleLabel,
+  hint,
   onCopy,
   onSettle,
 }: {
@@ -585,6 +586,7 @@ function SettlementRow({
   copied: boolean;
   settling: boolean;
   settleLabel: string;
+  hint?: string;
   onCopy: () => void;
   onSettle: () => void;
 }) {
@@ -599,7 +601,12 @@ function SettlementRow({
           <p className="truncate text-sm font-medium text-pearl">
             {tone === "owe" ? `Pay ${name}` : `${name} owes you`}
           </p>
-          <p className="truncate text-xs text-muted">{phone || "No phone on file"}</p>
+          <p className="truncate text-xs text-muted">
+            {hint || phone || "No phone on file"}
+          </p>
+          {hint && phone ? (
+            <p className="truncate text-[11px] text-muted/80">{phone}</p>
+          ) : null}
         </div>
         <span
           className={`shrink-0 font-display text-sm font-bold ${
@@ -680,10 +687,10 @@ function PaymentsPanel({
         {breakdown.map((row) => (
           <PaymentRow
             key={row.name}
-            expenseName={expense.name}
+            expenseName={expenseSplitKey(expense)}
             personName={row.name}
             share={equalShare}
-            current={findSplitAmount(splits, expense.name, row.name)}
+            current={findSplitAmount(splits, expense, row.name)}
             suggested={
               row.name.toLowerCase() === expense.paidBy.toLowerCase() ? expense.amount : 0
             }
