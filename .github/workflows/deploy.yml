@@ -30,6 +30,16 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Verify Sheets secret
+        env:
+          VITE_GOOGLE_SCRIPT_URL: ${{ secrets.VITE_GOOGLE_SCRIPT_URL }}
+        run: |
+          if [ -z "${VITE_GOOGLE_SCRIPT_URL}" ]; then
+            echo "::error::Missing repository secret VITE_GOOGLE_SCRIPT_URL. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
+            exit 1
+          fi
+          echo "Sheets script URL is configured (${#VITE_GOOGLE_SCRIPT_URL} chars)."
+
       - name: Build
         run: npm run build
         env:

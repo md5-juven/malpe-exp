@@ -311,7 +311,16 @@ export async function verifyUserPassword(
   }
 
   if (!SHEETS_CONFIG.scriptUrl) {
-    return verifyFromFriends(DEMO_FRIENDS, name, password);
+    try {
+      return verifyFromFriends(DEMO_FRIENDS, name, password);
+    } catch (err) {
+      if (err instanceof Error && err.message === "User not found") {
+        throw new Error(
+          "Sheets isn’t connected on this build. Add VITE_GOOGLE_SCRIPT_URL in GitHub Secrets and redeploy."
+        );
+      }
+      throw err;
+    }
   }
 
   try {
