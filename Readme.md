@@ -67,6 +67,41 @@ VITE_ADMIN_USERS=Alex,Maya
 
 Empty = everyone can delete. Users with a password in the sheet must unlock on login.
 
+## Custom domain (kirae.tech)
+
+**No GitHub Pro needed** for custom domains on a **public** repo.
+
+### App config (already in repo)
+
+- `public/CNAME` → `kirae.tech` (copied into `dist` on build)
+- CI builds with `VITE_BASE_PATH=/` so assets load at the domain root
+
+### GitHub Pages settings
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**  
+   (not “Deploy from a branch” — that skips our workflow)
+2. **Custom domain:** enter `kirae.tech` → **Save**
+3. After DNS verifies, turn on **Enforce HTTPS**
+
+### DNS at your domain registrar
+
+For apex domain `kirae.tech`, add these **A** records:
+
+| Type | Name | Value |
+|------|------|--------|
+| A | `@` | `185.199.108.153` |
+| A | `@` | `185.199.109.153` |
+| A | `@` | `185.199.110.153` |
+| A | `@` | `185.199.111.153` |
+
+Optional `www`:
+
+| Type | Name | Value |
+|------|------|--------|
+| CNAME | `www` | `md5-juven.github.io` |
+
+DNS can take a few minutes to 48 hours. GitHub will show a checkmark when it’s verified.
+
 ## Deploy to GitHub Pages
 
 This repo includes `.github/workflows/deploy.yml`. On every push to `main`, it builds and publishes to Pages.
